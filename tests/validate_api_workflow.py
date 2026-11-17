@@ -66,6 +66,9 @@ def main():
         real_benchmark=benchmark.run_benchmark
         def fake_benchmark(source,destination,options,job,root):
             cv2.imwrite(str(destination),np.full((64,128,3),110,np.uint8))
+            folder=destination.with_suffix('');(folder/'fey').mkdir(parents=True,exist_ok=True)
+            cv2.imwrite(str(folder/'fey'/'result.png'),np.full((64,96,4),180,np.uint8))
+            (folder/'report.json').write_text('{"tests":[]}',encoding='utf-8')
             with zipfile.ZipFile(destination.with_suffix('.zip'),'w') as archive:archive.writestr('report.json','{}')
             return {'tests':[{'id':'fey','status':'ok'}]}
         benchmark.run_benchmark=fake_benchmark
@@ -76,6 +79,10 @@ def main():
             assert montage['operation']=='cutout-test' and montage['width']==128
             response=client.get('/api/artifacts/'+montage['id']+'/download?format=zip')
             assert response.status_code==200 and response.headers['content-type']=='application/zip'
+            listing=client.get('/api/artifacts/'+montage['id']+'/benchmark-files').json()
+            assert listing['zipReady'] and len(listing['files'])==1
+            assert client.get(listing['files'][0]['url']).headers['content-type']=='image/png'
+            assert client.get('/api/artifacts/'+montage['id']+'/download?format=report').status_code==200
         finally:
             cuda.is_available=lambda:False
             benchmark.run_benchmark=real_benchmark

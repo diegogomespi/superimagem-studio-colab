@@ -12,11 +12,12 @@ def main():
     parser.add_argument('--mask')
     args = parser.parse_args()
     import torch
-    if not torch.cuda.is_available():
+    if args.engine != 'foreground' and not torch.cuda.is_available():
         raise RuntimeError('CUDA indisponível para motor opcional.')
-    free,total=torch.cuda.mem_get_info()
-    print(f'[GPU] {torch.cuda.get_device_name(0)} | VRAM livre {free/1024**3:.2f} / {total/1024**3:.2f} GiB',flush=True)
-    torch.cuda.reset_peak_memory_stats()
+    if args.engine != 'foreground':
+        free,total=torch.cuda.mem_get_info()
+        print(f'[GPU] {torch.cuda.get_device_name(0)} | VRAM livre {free/1024**3:.2f} / {total/1024**3:.2f} GiB',flush=True)
+        torch.cuda.reset_peak_memory_stats()
     options = json.load(open(args.options, encoding='utf-8'))
     image = ImageOps.exif_transpose(Image.open(args.input)).convert('RGB')
     width,height = image.size
@@ -63,25 +64,56 @@ def main():
             prediction=model((tensor-mean)/std)[-1].sigmoid()
             matte=torch.nn.functional.interpolate(prediction,size=(height,width),mode='bilinear',align_corners=False)
         alpha=np.rint(matte[0,0].float().cpu().numpy().clip(0,1)*255).astype(np.uint8)
+    elif args.engine == 'foreground':
+        from pymatting import estimate_foreground_ml
+        import cv2
+        if not args.mask:raise ValueError('Correção de cor exige alpha aprovado.')
+        mask=np.asarray(Image.open(args.mask).convert('L'))
+        uncertain=(mask>0)&(mask<255)
+        rgb=np.asarray(image).copy()
+        if np.any(uncertain):
+            yy,xx=np.where(mask>0)
+            pad=32
+            x0,x1=max(0,int(xx.min())-pad),min(width,int(xx.max())+pad+1)
+            y0,y1=max(0,int(yy.min())-pad),min(height,int(yy.max())+pad+1)
+            # Contexto completo do objeto, não apenas um recorte fino dos fios.
+            roi=rgb[y0:y1,x0:x1].astype(np.float32)/255
+            alpha_roi=mask[y0:y1,x0:x1].astype(np.float32)/255
+            if roi.shape[0]*roi.shape[1]>18000000:
+                raise ValueError('Correção de halos limitada a 18 MP por teste; use uma entrada menor.')
+            foreground=estimate_foreground_ml(roi,alpha_roi)
+            corrected=np.rint(np.clip(foreground,0,1)*255).astype(np.uint8)
+            band=cv2.dilate(uncertain[y0:y1,x0:x1].astype(np.uint8),np.ones((3,3),np.uint8))>0
+            rgb[y0:y1,x0:x1][band]=corrected[band]
+        Image.fromarray(rgb,'RGB').save(args.output)
+        print('[FOREGROUND] RGB corrigido na borda; alpha será preservado pelo chamador.',flush=True)
+        return
     else:
         from transformers import VitMatteImageProcessor, VitMatteForImageMatting
         import cv2
         if not args.mask:
             raise ValueError('ViTMatte exige máscara inicial.')
         mask=np.asarray(Image.open(args.mask).convert('L'))
-        radius=max(3,round(min(width,height)*.006))
-        kernel=np.ones((radius*2+1,radius*2+1),np.uint8)
-        sure_fg=cv2.erode((mask>245).astype(np.uint8),kernel)>0
-        sure_bg=cv2.dilate((mask>5).astype(np.uint8),kernel)==0
-        trimap=np.full(mask.shape,128,np.uint8);trimap[sure_fg]=255;trimap[sure_bg]=0
+        radius=max(1,round(min(width,height)*float(options.get('trimapRatio',.006))))
+        # Worker executado como script: tornar o pacote colab importável.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+        from colab.matting_tools import make_trimap
+        trimap=make_trimap(mask,radius)
+        Image.fromarray(trimap,'L').save(str(args.output)+'.trimap.png')
+        print(f'[VITMATTE] raio trimap {radius}px | unknown {np.count_nonzero(trimap==128)} | modo {options.get("mattingMode","tiles")}',flush=True)
         print('[DOWNLOAD] hustvl/vitmatte-small-composition-1k — RGB e trimap',flush=True)
         processor=VitMatteImageProcessor.from_pretrained('hustvl/vitmatte-small-composition-1k',revision='6a58ad7646403c1df626fbd746900aec7361ea1d')
         model=VitMatteForImageMatting.from_pretrained('hustvl/vitmatte-small-composition-1k',revision='6a58ad7646403c1df626fbd746900aec7361ea1d').eval().cuda()
         # Regiões limitadas a 768px com margem; só a faixa incerta é substituída.
         alpha=mask.copy()
-        for top in range(0,height,512):
-            for left in range(0,width,512):
-                bottom,right=min(height,top+512),min(width,left+512)
+        step=max(width,height) if options.get('mattingMode')=='whole' else 512
+        if options.get('mattingMode')=='whole' and width*height>2200000:
+            raise ValueError('Teste ViTMatte inteiro limitado a 2,2 MP. Não houve redução silenciosa; use entrada menor ou perfil por blocos.')
+        for top in range(0,height,step):
+            for left in range(0,width,step):
+                bottom,right=min(height,top+step),min(width,left+step)
                 if not np.any(trimap[top:bottom,left:right]==128):continue
                 x0,y0=max(0,left-64),max(0,top-64);x1,y1=min(width,right+64),min(height,bottom+64)
                 inputs=processor(images=image.crop((x0,y0,x1,y1)),trimaps=Image.fromarray(trimap[y0:y1,x0:x1]),return_tensors='pt').to('cuda')

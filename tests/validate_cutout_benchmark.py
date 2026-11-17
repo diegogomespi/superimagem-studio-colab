@@ -37,6 +37,7 @@ with tempfile.TemporaryDirectory() as directory:
         import shutil
         shutil.copyfile(target,sys.argv[1])
     with zipfile.ZipFile(target.with_suffix('.zip')) as archive:
-        assert set(archive.namelist())=={'montagem.png','report.json','ben2.png','birefnet.png'}
+        assert {'montagem.png','report.json','ben2.png','birefnet.png'} <= set(archive.namelist())
+        assert 'diagnosticos/ben2/final-alpha.png' in archive.namelist()
         assert json.loads(archive.read('report.json'))['tests'][2]['status']=='error'
 print('OK: entradas independentes, configurações, região comum, nomes, quadros de falha e pacote PNG/JSON. Motores substituídos neste teste.')

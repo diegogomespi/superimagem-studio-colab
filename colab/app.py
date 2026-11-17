@@ -754,6 +754,9 @@ async def create_job(request: JobRequest) -> dict[str, Any]:
         from colab.cutout_benchmark import validate_presets
         try:
             validate_presets(request.options.get('testPresets'))
+            if any(key.startswith('finegrain') for key in request.options['testPresets']):
+                from colab.cutout_options import validate_boxes
+                validate_boxes(request.options.get('boxes'))
         except ValueError as exc:
             raise HTTPException(400,str(exc)) from exc
     if request.operation == 'upscale':
@@ -853,8 +856,36 @@ def preview(artifact_id: str, full: bool = False, inspection: bool = False) -> F
     return FileResponse(preview_path, media_type='image/svg+xml' if item['mime'] == 'image/svg+xml' else 'image/png')
 
 
+@app.get('/api/artifacts/{artifact_id}/benchmark-files')
+def benchmark_files(artifact_id: str):
+    item=artifacts.get(artifact_id)
+    if not item or not item.get('benchmarkZip'):raise HTTPException(404,'Bateria não encontrada.')
+    folder=Path(item['path']).with_suffix('')
+    report=item.get('benchmarkReport',{})
+    files=[]
+    for test in report.get('tests',[]):
+        path=folder/test['id']/'result.png'
+        if test['status']=='ok' and path.is_file():
+            files.append({'name':test['id']+'.png','url':f'/api/artifacts/{artifact_id}/test-file/{test["id"]}','bytes':path.stat().st_size})
+    return {'zipReady':Path(item['benchmarkZip']).is_file(),'files':files}
+
+
+@app.get('/api/artifacts/{artifact_id}/test-file/{preset}')
+def benchmark_file(artifact_id: str,preset: str):
+    from colab.cutout_benchmark import PRESETS
+    item=artifacts.get(artifact_id)
+    if not item or not item.get('benchmarkZip') or preset not in PRESETS:raise HTTPException(404,'PNG não encontrado.')
+    path=Path(item['path']).with_suffix('')/preset/'result.png'
+    if not path.is_file():raise HTTPException(404,'Este teste não produziu um PNG.')
+    return FileResponse(path,media_type='image/png',filename=preset+'.png')
+
+
 @app.get('/api/artifacts/{artifact_id}/download')
 def download_artifact(artifact_id: str, format: str = 'png', background: str = '#ffffff') -> FileResponse:
+    if format == 'report':
+        item=artifacts.get(artifact_id)
+        if not item or not item.get('benchmarkZip'):raise HTTPException(404,'Relatório não encontrado.')
+        return FileResponse(Path(item['path']).with_suffix('')/'report.json',media_type='application/json',filename='relatorio-recortes.json')
     if format == 'zip':
         item = artifacts.get(artifact_id)
         if not item or not item.get('benchmarkZip'):

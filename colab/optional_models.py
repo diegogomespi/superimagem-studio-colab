@@ -11,6 +11,7 @@ REQUIREMENTS = {
     'fey': ['nobg==0.3.2'],
     'lucida': [],
     'vitmatte': [],
+    'foreground': ['pymatting==1.1.16'],
 }
 
 
