@@ -73,3 +73,13 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 Mais detalhes: [colab/LEIA-ME-COLAB.md](colab/LEIA-ME-COLAB.md).
 
 Planejamento e andamento: [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md).
+
+### Limpeza raster v2
+
+- Foto: redução de ruído Non-Local Means, contraste de luminância limitado e nitidez suave. O alfa é preservado exatamente.
+- Logo/ilustração: filtro bilateral para áreas uniformes, curva tonal global mais forte, nitidez limitada para evitar halos e ajuste opcional contínuo do alfa. Não aplica erosão nem apaga componentes pequenos. Não edita caminhos SVG.
+- Intensidade geral multiplica Reduzir ruído, Contraste/pretos, Nitidez e Bordas transparentes. Zero desliga; nitidez começa em 25%. Ajustar bordas altera cobertura parcial sem deslocar o contorno no limiar 128. Não remove automaticamente resíduos externos já presentes no alfa.
+- Mantém tamanho e original. Limpeza não recupera informação inexistente numa logo 327×186. Para resolução use Ampliar e depois aplique limpeza moderada à versão escolhida.
+- O indicador de contornos é uma comparação estrutural, não uma nota de qualidade. Percentual foi retirado do painel; alertas de divergência continuam. Cache Drive fica na aba IA; pincéis na ferramenta de recorte. Limpeza não mostra o cartão de trabalho concluído.
+- Pesquisa: [OpenCV NLM](https://docs.opencv.org/doc/doxygen/html/d5/d69/tutorial_py_non_local_means.html), [filtro bilateral](https://docs.opencv.org/doc/doxygen/html/d4/d13/tutorial_py_filtering.html), [GIMP Unsharp Mask](https://docs.gimp.org/3.0/en_GB/gimp-filter-unsharp-mask.html).
+- `tests/validate_cleanup.py`: mede redução de variação em áreas uniformes, transição de borda, reforço de preto, alfa/furos/acentos e desligamento dos controles. São imagens sintéticas; não equivalem a aprovação visual das imagens do usuário.

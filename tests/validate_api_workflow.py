@@ -36,6 +36,9 @@ def main():
         second=process(original['id'],'black-white',{'thresholdMode':'otsu'})
         third=process(second['id'],'mask-correct',{'strokes':[{'mode':'remove','size':.1,'points':[[.5,.5]]}]})
         assert 'fidelity' in third
+        cleaned=process(original['id'],'clean',{'cleanStyle':'illustration','cleanStrength':100,'cleanDenoise':40,'cleanContrast':30,'cleanSharpness':25,'cleanEdges':50})
+        assert cleaned['engine']=='OpenCV-clean-illustration-v2',cleaned
+        assert (cleaned['width'],cleaned['height'])==(original['width'],original['height'])
         # Exclusão em lote valida dependências antes de apagar qualquer item.
         response=client.post('/api/artifacts/delete-batch',json={'ids':[second['id']]})
         assert response.status_code==409,response.text

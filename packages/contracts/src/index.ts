@@ -47,6 +47,10 @@ export interface JobOptions {
   refineEdges?: boolean;
   cleanStyle?: 'illustration' | 'photo';
   cleanStrength?: number;
+  cleanDenoise?: number;
+  cleanContrast?: number;
+  cleanSharpness?: number;
+  cleanEdges?: number;
   cleanAlpha?: boolean;
   autoContrast?: boolean;
   thresholdMode?: 'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola' | 'solid';

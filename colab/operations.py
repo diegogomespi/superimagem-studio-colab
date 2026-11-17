@@ -116,36 +116,9 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
 
 
 def clean_image(image: np.ndarray, options: dict[str, Any], job: dict[str, Any]) -> tuple[np.ndarray, str]:
-    """Limpeza conservadora para foto, estampa e transparência."""
+    from colab.cleanup import clean_raster
     job.update(status="processing", phase="cleaning", progress={"completedTiles": 0, "totalTiles": 4})
-    _cancelled(job)
-    strength = max(0, min(100, int(options.get("cleanStrength", 35))))
-    style = options.get("cleanStyle", "illustration")
-    alpha = image[:, :, 3].copy() if image.ndim == 3 and image.shape[2] == 4 else None
-    bgr = image[:, :, :3].copy()
-    if strength:
-        if style == "photo":
-            h = 3 + round(strength * 0.07)
-            bgr = cv2.fastNlMeansDenoisingColored(bgr, None, h, h, 7, 21)
-        else:
-            sigma = 12 + strength * 0.8
-            bgr = cv2.bilateralFilter(bgr, 7, sigma, sigma)
-    job["progress"]["completedTiles"] = 1
-    _cancelled(job)
-    if bool(options.get("autoContrast", True)):
-        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        l = cv2.createCLAHE(clipLimit=1.4 + strength / 100, tileGridSize=(8, 8)).apply(l)
-        bgr = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
-    job["progress"]["completedTiles"] = 2
-    if alpha is not None and bool(options.get("cleanAlpha", True)):
-        alpha[alpha <= int(options.get("alphaFloor", 4))] = 0
-        alpha[alpha >= int(options.get("alphaCeiling", 251))] = 255
-        output = np.dstack((bgr, alpha))
-    else:
-        output = np.dstack((bgr, alpha)) if alpha is not None else bgr
-    job["progress"]["completedTiles"] = 4
-    return output, f"OpenCV-clean-{style}"
+    return clean_raster(image, options, job, _cancelled)
 
 
 def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any]) -> tuple[np.ndarray, str]:
