@@ -46,6 +46,7 @@ export interface JobOptions {
   boxes?: number[][];
   refineEdges?: boolean;
   cleanStyle?: 'illustration' | 'photo';
+  allowRepeatedUpscale?: boolean;
   cleanStrength?: number;
   cleanDenoise?: number;
   cleanContrast?: number;

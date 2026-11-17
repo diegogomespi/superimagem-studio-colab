@@ -8,13 +8,13 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 
 - RealESRGAN x4plus oficial para fotos e uso geral.
 - RealESRGAN x4plus Anime 6B para ilustrações e estampas.
-- SwinIR Classical x4 oficial em `Refinar logo / letras`, para recuperação mais fiel de bordas e texto antes da vetorização.
+- SwinIR Classical x4 oficial como motor experimental. Treinado para super-resolução clássica, não é especialista comprovado em reconstrução de logos ou tipografia.
 - BiRefNet HR-Matting como removedor principal e BEN2 como alternativa refinada, ambos carregados sob demanda.
 - Limpeza independente para foto/ilustração e limpeza do canal alpha.
 - Conversão P&B independente com limiar adaptativo, Otsu ou manual.
 - Vetorização colorida VTracer 1.0 (mosaico sem frestas) e Potrace para arte monocromática.
 - Vetorização P&B respeita o alpha: pixels transparentes são ignorados no traçado e o SVG permanece sem fundo.
-- Processamento CUDA em blocos de 400 px com sobreposição: FP16 nos RealESRGAN e FP32 no SwinIR, conforme a compatibilidade de cada arquitetura.
+- Processamento CUDA em blocos com sobreposição: RealESRGAN começa em 400 px FP16; SwinIR em 128 px FP32, com fallback para 96/64. Velocidade e qualidade na T4 continuam dependendo de benchmark real.
 - PNG transparente preservado sem converter o fundo para branco.
 - Comparação HD progressiva: abre com preview leve e carrega uma inspeção WebP de até 4096 px para revelar a diferença real do upscale sem travar a página.
 - Zoom ancorado no ponteiro do mouse, arraste para navegar e divisor antes/depois alinhado.
@@ -83,3 +83,15 @@ Planejamento e andamento: [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.m
 - O indicador de contornos é uma comparação estrutural, não uma nota de qualidade. Percentual foi retirado do painel; alertas de divergência continuam. Cache Drive fica na aba IA; pincéis na ferramenta de recorte. Limpeza não mostra o cartão de trabalho concluído.
 - Pesquisa: [OpenCV NLM](https://docs.opencv.org/doc/doxygen/html/d5/d69/tutorial_py_non_local_means.html), [filtro bilateral](https://docs.opencv.org/doc/doxygen/html/d4/d13/tutorial_py_filtering.html), [GIMP Unsharp Mask](https://docs.gimp.org/3.0/en_GB/gimp-filter-unsharp-mask.html).
 - `tests/validate_cleanup.py`: mede redução de variação em áreas uniformes, transição de borda, reforço de preto, alfa/furos/acentos e desligamento dos controles. São imagens sintéticas; não equivalem a aprovação visual das imagens do usuário.
+
+### Ampliação e conexão com a sessão
+
+- A aba Ampliar envia apenas escala, motor e modo 8x. Limpeza e P&B ficam em suas ferramentas. O atalho que encadeava tratamento e outra ampliação foi retirado da interface.
+- Se a versão ativa já é resultado de ampliação, o painel destaca isso e oferece voltar à entrada anterior para comparar motores sobre a mesma fonte. Uma nova ampliação cumulativa exige marcar a intenção; a imagem original nunca é escolhida silenciosamente.
+- `/api/jobs` valida o orçamento de RAM antes de criar tarefa/carregar pesos, incluindo o intermediário 4x nativo (mesmo para saída 2x) e 16x no 8x detalhado. Proteção de RAM permanece necessária: 40 mil pixels de lado não é um erro que deva ser contornado desativando limites.
+- A interface consulta saúde a cada 4s, timeout de 5s; queda da rede local também dispara alerta. Servidor inacessível/404 não é apresentado como GPU certamente desligada: o alerta informa que a conexão não pôde ser confirmada. Em página aberta e ativa, normalmente detecta falhas em até cerca de 9s; navegador em suspensão pode atrasar timers, por isso retesta ao receber foco.
+- O backend verifica CUDA e consulta memória do dispositivo. Falha gera estado sem GPU; as operações CUDA ficam desabilitadas até uma verificação bem-sucedida. Uma página já substituída pelo 404 do provedor não pode executar JavaScript do aplicativo: reabra pelo botão do Colab.
+- Logs mostram início/fim de blocos; SwinIR FP32 usa blocos menores para reduzir latência do primeiro avanço e pico de VRAM. Não há benchmark T4 local nem garantia de letras melhores.
+- Não foi adicionado script para simular uso. Heartbeat mede disponibilidade; não impede limites de inatividade/duração da plataforma. [Regras e limites oficiais do Colab](https://research.google.com/colaboratory/faq.html).
+- Referências: [inferência oficial SwinIR](https://github.com/JingyunLiang/SwinIR/blob/main/main_test_swinir.py), [Real-ESRGAN e outscale](https://github.com/xinntao/Real-ESRGAN).
+- Validação: `node tests/validate_runtime_health.mjs`, `tests/validate_upscale_limits.py`, `tests/validate_api_workflow.py`. Os testes simulam estado CUDA/OOM e rede, sem afirmar inferência real na T4.

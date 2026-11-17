@@ -323,6 +323,8 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
             if extra_h or extra_w:
                 patch = cv2.copyMakeBorder(patch, 0, extra_h, 0, extra_w, cv2.BORDER_REFLECT_101)
             dtype = torch.float16 if use_half else torch.float32
+            job['tileStartedAtEpoch'] = time.time()
+            print(f'[UPSCALE] bloco {completed[0]+1}/{total} | {patch_w}x{patch_h} | {"FP16" if use_half else "FP32"}', flush=True)
             tensor = torch.from_numpy(np.ascontiguousarray(patch.transpose(2, 0, 1))).unsqueeze(0).to(device='cuda', dtype=dtype).div_(255.0)
             with torch.inference_mode():
                 prediction = model(tensor).clamp_(0, 1)
@@ -332,6 +334,7 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
             crop_x, crop_y = (x - x0) * native, (y - y0) * native
             output[y * native:(y + core_h) * native, x * native:(x + core_w) * native] = result[crop_y:crop_y + core_h * native, crop_x:crop_x + core_w * native]
             completed[0] += 1
+            job['heartbeatEpoch'] = time.time()
             job['progress']['completedTiles'] = min(completed[0], total)
             del tensor, prediction
     return output
@@ -340,19 +343,22 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
 def upscale_with_fallback(bgr: np.ndarray, model: Any, job: dict[str, Any], use_half: bool = True, input_multiple: int = 1) -> tuple[np.ndarray, int]:
     """Reduz automaticamente o bloco se a GPU não tiver memória suficiente."""
     height, width = bgr.shape[:2]
-    last_error: Exception | None = None
-    for tile in (400, 320, 256, 192):
+    last_error: str | None = None
+    # SwinIR FP32 usa atenção; blocos menores dão avanços mais frequentes.
+    for tile in ((128, 96, 64) if input_multiple > 1 else (400, 320, 256, 192)):
         completed = [0]
         total = tile_count(width, height, tile)
         job['progress'] = {'completedTiles': 0, 'totalTiles': total, 'tileSize': tile}
         try:
             return upscale_rgb_tiled(bgr, model, job, completed, total, tile, use_half=use_half, input_multiple=input_multiple), total
         except torch.cuda.OutOfMemoryError as exc:
-            last_error = exc
+            last_error = str(exc)
+            # O traceback mantém output/tensores vivos e impede liberar VRAM.
+            exc.__traceback__ = None
             job['phase'] = 'reducing_tile'
             gc.collect()
             torch.cuda.empty_cache()
-    raise RuntimeError(f'A GPU ficou sem memória mesmo usando blocos de 192 px: {last_error}')
+    raise RuntimeError(f'A GPU ficou sem memória mesmo reduzindo os blocos: {last_error}')
 
 
 def process_job(job_id: str) -> None:
@@ -608,10 +614,16 @@ def process_job(job_id: str) -> None:
 @app.get('/api/health')
 def health() -> dict[str, Any]:
     gpu = None
-    if torch.cuda.is_available():
-        props = torch.cuda.get_device_properties(0)
-        gpu = {'name': props.name, 'memoryBytes': props.total_memory, 'cuda': torch.version.cuda}
-    return {'name': 'SuperImagem', 'version': BUILD_VERSION, 'engineAvailable': torch.cuda.is_available(), 'engine': 'cuda' if torch.cuda.is_available() else 'cpu', 'gpu': gpu, 'modelsReady': sorted(models.keys()), 'workerBusy': any(j['status'] in ('queued', 'preparing', 'processing') for j in jobs.values())}
+    warning = None
+    try:
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(0)
+            # is_available/propriedades podem permanecer em cache após erro CUDA.
+            torch.cuda.mem_get_info()
+            gpu = {'name': props.name, 'memoryBytes': props.total_memory, 'cuda': torch.version.cuda}
+    except Exception as exc:
+        warning = f'GPU indisponível: {exc}'
+    return {'name': 'SuperImagem', 'version': BUILD_VERSION, 'engineAvailable': gpu is not None, 'engine': 'cuda' if gpu else 'cpu', 'gpu': gpu, 'warning': warning, 'modelsReady': sorted(models.keys()), 'workerBusy': any(j['status'] in ('queued', 'preparing', 'processing') for j in jobs.values())}
 
 
 @app.post('/api/models/prepare')
@@ -698,6 +710,12 @@ async def create_job(request: JobRequest) -> dict[str, Any]:
         raise HTTPException(400, 'Imagem ou operação inválida.')
     if artifacts[request.artifactId].get('candidate'):
         raise HTTPException(409, 'Aceite ou descarte a reconstrução antes de iniciar outra operação.')
+    if request.operation == 'upscale':
+        from colab.upscale_limits import validate_upscale
+        try:
+            validate_upscale(artifacts[request.artifactId], request.options, psutil.virtual_memory().available)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
     blocking = active_job()
     if blocking:
         return JSONResponse(status_code=409,content={'detail':f'Tarefa {blocking["id"]} em andamento: {blocking["phase"]}. Acompanhe ou cancele essa tarefa.', 'activeJob':blocking})

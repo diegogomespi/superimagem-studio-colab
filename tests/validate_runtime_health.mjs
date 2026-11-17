@@ -1,0 +1,16 @@
+import {readFileSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+const source=readFileSync(new URL('../apps/ui/src/runtime-health.ts',import.meta.url),'utf8');
+const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {probeRuntime}=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+const ready=()=>Promise.resolve(Response.json({name:'SuperImagem',engineAvailable:true,gpu:{name:'Tesla T4'},version:'test'}));
+assert.equal((await probeRuntime(ready)).status,'ready');
+assert.equal((await probeRuntime(()=>Promise.resolve(Response.json({name:'SuperImagem',engineAvailable:false,gpu:null})))).status,'no-gpu');
+assert.equal((await probeRuntime(()=>Promise.resolve(new Response('page not found',{status:404})))).status,'offline');
+assert.equal((await probeRuntime(()=>Promise.reject(new TypeError('network')))).status,'offline');
+assert.equal((await probeRuntime(()=>Promise.resolve(Response.json({name:'Outro servidor'})))).status,'offline');
+const hanging=signal=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}));
+assert.equal((await probeRuntime(hanging,undefined,20)).status,'offline');
+assert.equal((await probeRuntime(ready)).status,'ready','Nova consulta deve recuperar conexão após timeout');
+console.log('OK: GPU, sem GPU, HTTP 404, falha de rede, servidor errado, timeout e reconexão. Sem inferência CUDA.');
