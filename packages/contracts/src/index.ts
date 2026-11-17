@@ -11,6 +11,8 @@ export interface ArtifactInfo {
   hasAlpha: boolean;
   path?: string;
   parentId?: string;
+  rootId?: string;
+  versionNumber?: number;
   operation?: Tool;
   engine?: string;
 }

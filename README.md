@@ -24,6 +24,8 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 - Escolha explícita entre PNG sem perdas, WebP Q95 com transparência e JPEG Q95 sempre com fundo branco.
 - Histórico de versões: cada resultado vira automaticamente a entrada ativa da próxima operação, sem alterar a imagem original.
 - Voltar uma etapa, restaurar a original, selecionar qualquer versão anterior e baixar a versão ativa a qualquer momento.
+- Ramificações reais: uma nova operação usa exatamente a versão escolhida como pai, mesmo que ela não seja a última da lista.
+- Exclusão segura de versões: a original é protegida e uma versão com resultados derivados só pode ser apagada depois das versões-filhas.
 - Layout responsivo: cartões lado a lado em tela larga e empilhados em tela estreita.
 
 ## Executar no Colab

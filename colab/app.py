@@ -90,6 +90,12 @@ def artifact_public(item: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in item.items() if key not in ('path', 'previewPath', 'inspectPath', 'webpPath')}
 
 
+def version_identity(source: dict[str, Any]) -> tuple[str, int]:
+    root_id = source.get('rootId', source['id'])
+    number = max((int(item.get('versionNumber', 1)) for item in artifacts.values() if item.get('rootId', item['id']) == root_id), default=1) + 1
+    return root_id, number
+
+
 def processed_filename(original: str, scale: int, model_kind: str, detail_mode: str, extension: str = 'png') -> str:
     stem = Path(original).stem
     stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', stem).strip(' .')[:140] or 'imagem'
@@ -267,7 +273,8 @@ def process_job(job_id: str) -> None:
                 output_path = ARTIFACTS_DIR / f'{result_id}.svg'
                 model_id = vectorize(Path(source['path']), output_path, options, job)
                 filename = operation_filename(source['filename'], operation, model_id, 'svg')
-                result = {'id': result_id, 'filename': filename, 'mime': 'image/svg+xml', 'width': source['width'], 'height': source['height'], 'hasAlpha': True, 'path': str(output_path), 'previewPath': str(output_path), 'inspectPath': str(output_path), 'webpPath': None, 'parentId': source['id'], 'operation': operation, 'engine': model_id, 'options': options}
+                root_id, version_number = version_identity(source)
+                result = {'id': result_id, 'filename': filename, 'mime': 'image/svg+xml', 'width': source['width'], 'height': source['height'], 'hasAlpha': True, 'path': str(output_path), 'previewPath': str(output_path), 'inspectPath': str(output_path), 'webpPath': None, 'parentId': source['id'], 'rootId': root_id, 'versionNumber': version_number, 'operation': operation, 'engine': model_id, 'options': options}
                 artifacts[result_id] = result
                 job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': 1, 'totalTiles': 1}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
                 return
@@ -329,7 +336,8 @@ def process_job(job_id: str) -> None:
             inspect_path = ARTIFACTS_DIR / f'{result_id}-inspect.webp'
             create_inspection_preview(output, inspect_path)
             out_height, out_width = output.shape[:2]
-            result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id'], 'operation': operation, 'engine': model_id, 'options': options}
+            root_id, version_number = version_identity(source)
+            result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id'], 'rootId': root_id, 'versionNumber': version_number, 'operation': operation, 'engine': model_id, 'options': options}
             artifacts[result_id] = result
             job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': total, 'totalTiles': total}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
     except InterruptedError as exc:
@@ -389,7 +397,7 @@ async def upload_artifact(file: UploadFile = File(...)) -> dict[str, Any]:
     except Exception:
         path.unlink(missing_ok=True)
         raise HTTPException(400, 'Imagem inválida.')
-    item = {'id': item_id, 'filename': file.filename or f'imagem{suffix}', 'mime': file.content_type, 'width': width, 'height': height, 'hasAlpha': has_alpha, 'path': str(path)}
+    item = {'id': item_id, 'filename': file.filename or f'imagem{suffix}', 'mime': file.content_type, 'width': width, 'height': height, 'hasAlpha': has_alpha, 'path': str(path), 'rootId': item_id, 'versionNumber': 1}
     artifacts[item_id] = item
     return artifact_public(item)
 
@@ -400,6 +408,26 @@ def get_artifact(artifact_id: str) -> dict[str, Any]:
     if not item:
         raise HTTPException(404, 'Imagem não encontrada.')
     return artifact_public(item)
+
+
+@app.delete('/api/artifacts/{artifact_id}')
+def delete_artifact(artifact_id: str) -> dict[str, Any]:
+    item = artifacts.get(artifact_id)
+    if not item:
+        raise HTTPException(404, 'Versão não encontrada.')
+    if not item.get('parentId'):
+        raise HTTPException(400, 'A imagem original não pode ser excluída.')
+    children = [child for child in artifacts.values() if child.get('parentId') == artifact_id]
+    if children:
+        raise HTTPException(409, 'Esta versão possui resultados derivados. Exclua primeiro as versões que nasceram dela.')
+    paths = {item.get(key) for key in ('path', 'previewPath', 'inspectPath', 'webpPath') if item.get(key)}
+    paths.update(str(path) for path in ARTIFACTS_DIR.glob(f'{artifact_id}-*'))
+    for value in paths:
+        path = Path(value)
+        if path.is_file() and path.parent.resolve() == ARTIFACTS_DIR.resolve():
+            path.unlink(missing_ok=True)
+    del artifacts[artifact_id]
+    return {'ok': True, 'deletedId': artifact_id, 'activateId': item['parentId']}
 
 
 @app.post('/api/jobs', status_code=202)

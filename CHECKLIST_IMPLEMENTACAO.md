@@ -52,8 +52,8 @@ Fluxos igualmente válidos:
 - [ ] Mostrar nomes curtos: Original, V2, V3 e assim por diante.
 - [ ] Mostrar descrição: `Upscale 4× · Foto`, `Fundo removido · BEN2`, etc.
 - [ ] Permitir renomear versões.
-- [ ] Excluir somente uma versão sem apagar outras por acidente.
-- [ ] Botão `Desfazer` que apenas seleciona o pai da versão ativa.
+- [x] Excluir somente uma versão sem apagar outras por acidente.
+- [x] Botão `Desfazer` que apenas seleciona o pai da versão ativa.
 - [ ] Botão `Refazer` enquanto o caminho ainda existir.
 - [ ] Árvore visual compacta quando houver ramificações.
 - [ ] Manter os artefatos somente na sessão do Colab nesta primeira fase.
