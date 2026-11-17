@@ -15,6 +15,7 @@ export interface ArtifactInfo {
   versionNumber?: number;
   operation?: Tool;
   engine?: string;
+  options?: JobOptions;
 }
 
 export interface JobOptions {

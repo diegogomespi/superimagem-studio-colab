@@ -50,12 +50,12 @@ Fluxos igualmente válidos:
 - [ ] Validar todo o histórico numa sessão real do Colab.
 - [ ] Guardar operação, motor, parâmetros, dimensões e horário em cada versão.
 - [ ] Mostrar nomes curtos: Original, V2, V3 e assim por diante.
-- [ ] Mostrar descrição: `Upscale 4× · Foto`, `Fundo removido · BEN2`, etc.
+- [x] Mostrar descrição: `Upscale 4× · Foto`, `Fundo removido · BEN2`, etc.
 - [ ] Permitir renomear versões.
 - [x] Excluir somente uma versão sem apagar outras por acidente.
 - [x] Botão `Desfazer` que apenas seleciona o pai da versão ativa.
 - [ ] Botão `Refazer` enquanto o caminho ainda existir.
-- [ ] Árvore visual compacta quando houver ramificações.
+- [x] Árvore visual compacta quando houver ramificações.
 - [ ] Manter os artefatos somente na sessão do Colab nesta primeira fase.
 
 ## 4. Interface modular
@@ -65,7 +65,7 @@ Fluxos igualmente válidos:
 - [x] Aba `Remover fundo`.
 - [x] Aba `Limpar`.
 - [x] Aba `Vetorizar`.
-- [ ] Aba `Histórico`.
+- [x] Aba `Histórico`.
 - [x] Trocar apenas o painel de controles; manter a imagem no mesmo visualizador.
 - [x] Destacar a ferramenta aberta sem transformar o sistema em uma sequência.
 - [x] Manter todos os controles essenciais dentro da altura da tela em desktop.

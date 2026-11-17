@@ -26,6 +26,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 - Voltar uma etapa, restaurar a original, selecionar qualquer versão anterior e baixar a versão ativa a qualquer momento.
 - Ramificações reais: uma nova operação usa exatamente a versão escolhida como pai, mesmo que ela não seja a última da lista.
 - Exclusão segura de versões: a original é protegida e uma versão com resultados derivados só pode ser apagada depois das versões-filhas.
+- Aba `Histórico` inspirada no painel do Photoshop, com histórico não linear sempre ativo, descrições das operações e gráfico compacto das ramificações.
 - Layout responsivo: cartões lado a lado em tela larga e empilhados em tela estreita.
 
 ## Executar no Colab
