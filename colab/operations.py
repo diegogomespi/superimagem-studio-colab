@@ -39,18 +39,31 @@ def _bgra_from_pil(image: Image.Image) -> np.ndarray:
 def _combine_alpha(source: np.ndarray, predicted: np.ndarray) -> np.ndarray:
     """Mantém transparência já existente em vez de ressuscitar pixels vazios."""
     if source.ndim == 3 and source.shape[2] == 4:
-        original = source[:, :, 3].astype(np.float32) / 255.0
-        predicted = np.rint(predicted.astype(np.float32) * original).astype(np.uint8)
+        predicted = np.minimum(predicted, source[:, :, 3]).astype(np.uint8)
     return predicted
 
 
 def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str, Any]) -> tuple[np.ndarray, str]:
     import torch
     engine = options.get("backgroundEngine", "birefnet-hr")
+    if engine == 'hybrid':
+        first, _ = remove_background(image, {**options, 'backgroundEngine':'ben2'}, job)
+        release_optional_models()
+        second, _ = remove_background(image, {**options, 'backgroundEngine':'birefnet-hr'}, job)
+        release_optional_models()
+        radius = max(3, round(min(image.shape[:2]) * .015))
+        vicinity = cv2.dilate((first[:,:,3]>32).astype(np.uint8), np.ones((radius*2+1,radius*2+1),np.uint8))
+        alpha = np.where(vicinity>0, second[:,:,3], 0).astype(np.uint8)
+        # Heurística explícita, não padrão: BiRefNet fornece o alpha perto do BEN2.
+        return np.dstack((image[:,:,:3], alpha)), 'Experimental-BEN2-BiRefNet'
     refine = bool(options.get("refineEdges", True))
     job.update(status="loading_model", phase="loading_background_model")
     _cancelled(job)
     source_pil = _pil_rgba_from_bgra(image)
+    if options.get('analysisContrast'):
+        lab=cv2.cvtColor(image[:,:,:3],cv2.COLOR_BGR2LAB)
+        lab[:,:,0]=cv2.createCLAHE(clipLimit=1.5,tileGridSize=(8,8)).apply(lab[:,:,0])
+        source_pil=Image.fromarray(cv2.cvtColor(cv2.cvtColor(lab,cv2.COLOR_LAB2BGR),cv2.COLOR_BGR2RGB))
 
     if engine == "ben2":
         if "ben2" not in _MODELS:
@@ -63,6 +76,8 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
         with torch.inference_mode():
             foreground = model.inference(source_pil.convert("RGB"), refine_foreground=refine)
         output = _bgra_from_pil(foreground)
+        if options.get('analysisContrast'):
+            output[:,:,:3]=image[:,:,:3]
         output[:, :, 3] = _combine_alpha(image, output[:, :, 3])
         job["progress"] = {"completedTiles": 1, "totalTiles": 1}
         return output, "BEN2-base-refined" if refine else "BEN2-base"
@@ -80,7 +95,9 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
     model = _MODELS["birefnet-hr"]
     job.update(status="processing", phase="background_inference", progress={"completedTiles": 0, "totalTiles": 1})
     rgb = source_pil.convert("RGB")
-    tensor = torch.from_numpy(np.asarray(rgb.resize((2048, 2048), Image.Resampling.LANCZOS)).copy())
+    resolution={'normal':1024,'detailed':1536,'max':2048}.get(options.get('quality','max'),2048)
+    print(f'[RECORTE] BiRefNet HR-Matting | resolução de inferência {resolution}x{resolution}',flush=True)
+    tensor = torch.from_numpy(np.asarray(rgb.resize((resolution, resolution), Image.Resampling.LANCZOS)).copy())
     tensor = tensor.permute(2, 0, 1).unsqueeze(0).cuda().half().div_(255.0)
     mean = torch.tensor((0.485, 0.456, 0.406), device="cuda", dtype=torch.float16).view(1, 3, 1, 1)
     std = torch.tensor((0.229, 0.224, 0.225), device="cuda", dtype=torch.float16).view(1, 3, 1, 1)
@@ -200,7 +217,12 @@ def vectorize(source_path: Path, output_path: Path, options: dict[str, Any], job
     job.update(status="processing", phase="vectorizing", progress={"completedTiles": 0, "totalTiles": 1})
     mode = options.get("vectorMode", "color")
     engine = options.get("vectorEngine", "vtracer")
-    if engine == "potrace" and mode == "bw":
+    if engine == 'potrace' and mode != 'bw':
+        raise ValueError('Potrace é monocromático. Selecione P&B ou outro motor.')
+    if engine == 'inkvec':
+        from colab.inkvec_engine import convert
+        model_id=convert(source_path,output_path,options,job)
+    elif engine == "potrace" and mode == "bw":
         temporary = output_path.with_suffix(".pbm")
         encoded = np.fromfile(source_path, dtype=np.uint8)
         image = cv2.imdecode(encoded, cv2.IMREAD_UNCHANGED)
@@ -209,7 +231,9 @@ def vectorize(source_path: Path, output_path: Path, options: dict[str, Any], job
         binary = prepare_potrace_bitmap(image)
         cv2.imwrite(str(temporary), binary)
         try:
-            subprocess.run(["potrace", str(temporary), "--svg", "--output", str(output_path), "--turdsize", str(int(options.get("speckle", 2))), "--alphamax", "1.0", "--opttolerance", str(float(options.get("curveTolerance", 0.2)))], check=True, capture_output=True, text=True)
+            tolerance=max(.01,min(1,float(options.get('curveTolerance',.2))))
+            corner=max(0,min(1.33,float(options.get('cornerSmoothing',1))))
+            subprocess.run(["potrace", str(temporary), "--svg", "--output", str(output_path), "--turdsize", str(max(0,int(options.get("speckle", 0)))), "--alphamax", str(corner), "--opttolerance", str(tolerance)], check=True, capture_output=True, text=True)
         finally:
             temporary.unlink(missing_ok=True)
         model_id = "Potrace"

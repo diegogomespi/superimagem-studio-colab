@@ -57,7 +57,8 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - Recorte Automático implementa candidatos BEN2/BiRefNet sequenciais, escolha, comparação A/B, aprovação e descarte. Teste de orquestração usa motores substitutos; qualidade dos pesos ainda precisa de T4.
 - Instalação FLUX cria venv sem ensurepip, usando pip --python direcionado ao ambiente separado. Teste reproduz indisponibilidade de ensurepip sem baixar modelos.
 - Log do Colab abre expandido, preserva até 3000 linhas recentes e mostra saída não silenciosa do pip; logs dos workers incluem também as últimas linhas antes do encerramento.
-- Ainda pendentes: DiffBIR, Finegrain, FeyNoBg, Lucida, ViTMatte/SDMatte, pincéis, Inkvec e histórico múltiplo. Esta atualização não declara o conjunto completo pronto.
+- Evolução: adaptadores opcionais de DiffBIR/Finegrain/FeyNoBg/Lucida/ViTMatte, pincéis, Inkvec, métricas e histórico múltiplo implementados. Motores CUDA novos ainda experimentais, aguardando inferência real. SDMatte foi avaliado e continua condicionado a benchmark antes de incorporar.
+- Estado detalhado dos 16 itens, versões e procedimento de teste: [ENTREGA_16_ITENS.md](ENTREGA_16_ITENS.md). Código integrado não equivale a aprovação de qualidade na T4/CorelDRAW.
 
 - TypeScript estrito e build Vite.
 - Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.

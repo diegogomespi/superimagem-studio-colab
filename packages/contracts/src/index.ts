@@ -1,8 +1,11 @@
-export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize';
+export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize' | 'mask-correct';
 export type Profile = 'economy' | 'balanced';
 export type JobStatus = 'queued' | 'preparing' | 'loading_model' | 'processing' | 'encoding' | 'done' | 'cancelling' | 'cancelled' | 'error' | 'interrupted';
 
 export interface ArtifactInfo {
+  maskSourceId?: string;
+  fidelity?: { edgeAgreement: number; review: string; message: string };
+  vectorReport?: { paths: number; commands: number; bytes: number };
   candidate?: boolean;
   warning?: string;
   id: string;
@@ -22,6 +25,10 @@ export interface ArtifactInfo {
 
 export interface JobOptions {
   useAI?: boolean;
+  restorationEngine?: 'flux' | 'diffbir';
+  enhanceMode?: 'faithful' | 'reconstruct' | 'photo';
+  enhance?: boolean;
+  prepareBW?: boolean;
   mode?: 'ai' | 'color';
   model?: 'u2netp' | 'u2net-human-seg' | 'isnet-general-use' | 'birefnet-general' | 'birefnet-hr-matting';
   maskContrast?: number;
@@ -31,7 +38,11 @@ export interface JobOptions {
   detailMode?: 'faithful' | 'detailed';
   denoise?: number;
   sharpness?: number;
-  backgroundEngine?: 'auto' | 'birefnet-hr' | 'ben2';
+  backgroundEngine?: 'auto' | 'birefnet-hr' | 'ben2' | 'hybrid' | 'finegrain' | 'fey' | 'lucida';
+  analysisContrast?: boolean;
+  advancedMatting?: boolean;
+  quality?: 'normal' | 'detailed' | 'max';
+  boxes?: number[][];
   refineEdges?: boolean;
   cleanStyle?: 'illustration' | 'photo';
   cleanStrength?: number;
@@ -40,7 +51,8 @@ export interface JobOptions {
   thresholdMode?: 'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola';
   threshold?: number;
   vectorMode?: 'color' | 'bw';
-  vectorEngine?: 'vtracer' | 'potrace';
+  vectorEngine?: 'vtracer' | 'potrace' | 'inkvec';
+  curveTolerance?: number;
   maxColors?: number;
   color?: string;
   tolerance?: number;

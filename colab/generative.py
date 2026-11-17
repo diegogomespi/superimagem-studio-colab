@@ -7,10 +7,11 @@ import venv
 from pathlib import Path
 
 
-def run_checked(command, job, log):
+def run_checked(command, job, log, cwd=None, env=None):
     offset = log.stat().st_size if log.exists() else 0
     with log.open('a', encoding='utf-8') as output:
-        process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
+        print(f'[PROCESSO] Iniciando: {Path(command[0]).name} | log {log.name}',flush=True)
+        process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, cwd=cwd, env=env)
         try:
             while process.poll() is None:
                 with log.open('r', encoding='utf-8', errors='replace') as reader:
@@ -29,7 +30,7 @@ def run_checked(command, job, log):
                 print(tail, end='', flush=True)
             if process.returncode:
                 detail = log.read_text(encoding='utf-8', errors='replace')[-2500:]
-                raise RuntimeError(f'Falha no módulo opcional FLUX. O processamento convencional continua disponível.\n{detail}')
+                raise RuntimeError(f'Falha no processo opcional. O processamento convencional continua disponível.\n{detail}')
         finally:
             if process.poll() is None:
                 process.terminate()

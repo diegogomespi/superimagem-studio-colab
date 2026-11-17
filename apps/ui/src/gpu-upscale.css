@@ -109,6 +109,11 @@ body:has(.upscale-only){overflow:auto;background:#090a0f;min-width:0}
 .history-nav{display:flex;gap:4px}
 .history-nav button{width:32px;height:32px;padding:0!important;border-radius:8px!important;font-size:17px!important;color:#d4d5dc!important}
 .history-nav button:disabled{opacity:.28;cursor:not-allowed}
+.side-panel .field>button:not(.file-button){display:block;width:100%;padding:9px 10px;margin:5px 0;border:1px solid #363944;border-radius:8px;background:#1a1c25;color:#e5e7ee;cursor:pointer;font-size:12px}
+.side-panel .field>button.selected{border-color:#ff684a;background:#301b16;color:#ff8c66}
+.side-panel .field>button:disabled{opacity:.4;cursor:not-allowed}
+.side-panel .field>select{display:block;width:100%;min-width:0;padding:9px 7px;margin:6px 0;border:1px solid #363944;border-radius:8px;background:#171922;color:#e5e7ee;font-size:12px}
+.side-panel .field>summary{font-size:12px;cursor:pointer}
 .upscale-only .background-switch{margin-left:auto}
 .upscale-only .canvas{margin:12px;border-radius:13px;cursor:default;overscroll-behavior:contain;touch-action:none}
 .upscale-only .canvas.pannable{cursor:grab}

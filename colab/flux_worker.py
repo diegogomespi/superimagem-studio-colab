@@ -23,6 +23,9 @@ def main():
     from transformers import Qwen3ForCausalLM, BitsAndBytesConfig as TextQuantization
     if not torch.cuda.is_available():
         raise RuntimeError('FLUX exige GPU CUDA neste modo.')
+    free,total=torch.cuda.mem_get_info()
+    print(f'[GPU] {torch.cuda.get_device_name(0)} | VRAM livre {free/1024**3:.2f} / {total/1024**3:.2f} GiB',flush=True)
+    torch.cuda.reset_peak_memory_stats()
     repo = 'black-forest-labs/FLUX.2-klein-4B'
     print(f'[DOWNLOAD] {repo}/transformer — conferindo cache e baixando arquivos ausentes', flush=True)
     transformer = Flux2Transformer2DModel.from_pretrained(
@@ -51,6 +54,7 @@ def main():
                   num_inference_steps=4, guidance_scale=1.0,
                   generator=torch.Generator('cpu').manual_seed(231)).images[0]
     result.save(Path(args.output))
+    print(f'[GPU] Pico alocado {torch.cuda.max_memory_allocated()/1024**3:.2f} GiB',flush=True)
     print('[FLUX] Reconstrução salva; aguardando aprovação do usuário.', flush=True)
 
 

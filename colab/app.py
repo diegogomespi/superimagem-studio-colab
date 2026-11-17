@@ -31,6 +31,8 @@ from PIL import Image
 from pydantic import BaseModel
 from colab.operations import black_white, clean_image, remove_background, vectorize, release_optional_models
 from colab.enhancement import improve_raster
+from colab.quality import fidelity, svg_report, compare_svg
+from colab.mask_tools import correct_mask
 
 # BasicSR antigo importa um módulo renomeado nas versões novas do torchvision.
 from spandrel import ModelLoader
@@ -92,6 +94,62 @@ class JobRequest(BaseModel):
     artifactId: str
     operation: str = 'upscale'
     options: dict[str, Any] = {}
+
+
+class BatchDelete(BaseModel):
+    ids: list[str]
+
+
+class CacheSettings(BaseModel):
+    enabled: bool
+
+
+@app.post('/api/cache')
+def configure_cache(settings: CacheSettings):
+    global MODELS_DIR
+    if any(j['status'] not in ('done', 'error', 'cancelled', 'interrupted') for j in jobs.values()):
+        raise HTTPException(409, 'Aguarde a tarefa atual terminar.')
+    if settings.enabled:
+        drive = Path('/content/drive/MyDrive')
+        if not drive.is_dir():
+            raise HTTPException(409, 'Monte o Google Drive no Colab antes de ativar o cache. Nenhum Drive é conectado automaticamente.')
+        directory = drive / 'SuperImagemCache'
+    else:
+        directory = ROOT / 'colab' / 'models'
+    directory.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR = directory
+    os.environ['HF_HOME'] = str(directory / 'huggingface')
+    os.environ['HF_HUB_CACHE'] = str(directory / 'huggingface' / 'hub')
+    try:
+        import huggingface_hub.constants as constants
+        constants.HF_HOME = os.environ['HF_HOME']
+        constants.HF_HUB_CACHE = os.environ['HF_HUB_CACHE']
+    except ImportError:
+        pass
+    print(f'[CACHE] {directory} | Drive={settings.enabled}', flush=True)
+    return {'enabled': settings.enabled, 'path': str(directory)}
+
+
+@app.post('/api/artifacts/delete-batch')
+def delete_batch(request: BatchDelete):
+    ids = set(request.ids)
+    if not ids or len(ids) > 1000:
+        raise HTTPException(400, 'Selecione entre 1 e 1000 versões.')
+    if any(item not in artifacts or not artifacts[item].get('parentId') for item in ids):
+        raise HTTPException(400, 'A original é protegida; selecione somente versões existentes.')
+    if any(item.get('parentId') in ids and item['id'] not in ids for item in artifacts.values()):
+        raise HTTPException(409, 'Selecione também as versões derivadas para excluir esse ramo.')
+    if any(j['artifactId'] in ids and j['status'] not in ('done', 'error', 'cancelled', 'interrupted') for j in jobs.values()):
+        raise HTTPException(409, 'Há uma tarefa usando uma versão selecionada.')
+    remaining = set(ids)
+    while remaining:
+        leaves = [key for key in remaining if not any(child.get('parentId') == key for child in artifacts.values())]
+        if not leaves:
+            raise HTTPException(409, 'Dependência inválida entre versões.')
+        for key in leaves:
+            delete_artifact(key)
+            remaining.remove(key)
+    return {'deletedIds': sorted(ids)}
 
 
 def new_id(prefix: str) -> str:
@@ -317,6 +375,12 @@ def process_job(job_id: str) -> None:
                 root_id, version_number = version_identity(source)
                 result = {'id': result_id, 'filename': filename, 'mime': 'image/svg+xml', 'width': source['width'], 'height': source['height'], 'hasAlpha': True, 'path': str(output_path), 'previewPath': str(output_path), 'inspectPath': str(output_path), 'webpPath': None, 'parentId': source['id'], 'rootId': root_id, 'versionNumber': version_number, 'operation': operation, 'engine': model_id, 'options': options}
                 artifacts[result_id] = result
+                result['vectorReport'] = svg_report(output_path)
+                try:
+                    reference=cv2.imdecode(np.fromfile(source['path'],dtype=np.uint8),cv2.IMREAD_UNCHANGED)
+                    result['fidelity']=compare_svg(output_path,reference)
+                except Exception as exc:
+                    result['vectorReport']['renderWarning']=f'Comparação rasterizada indisponível: {exc}'
                 job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': 1, 'totalTiles': 1}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
                 return
 
@@ -324,6 +388,8 @@ def process_job(job_id: str) -> None:
             image = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
             if image is None:
                 raise ValueError('Não foi possível abrir a imagem raster. Para continuar após um SVG, volte para uma versão PNG.')
+            if image.ndim==2:
+                image=cv2.cvtColor(image,cv2.COLOR_GRAY2BGR)
             has_alpha = image.ndim == 3 and image.shape[2] == 4
             height, width = image.shape[:2]
             if operation == 'remove-background' and options.get('backgroundEngine') == 'auto':
@@ -338,6 +404,21 @@ def process_job(job_id: str) -> None:
                     try:
                         candidate_options = {**options, 'backgroundEngine': engine}
                         cutout, engine_name = remove_background(image.copy(), candidate_options, job)
+                        if options.get('advancedMatting'):
+                            release_optional_models()
+                            from colab.optional_models import segment
+                            initial_mask=ARTIFACTS_DIR/f'{new_id("initial-alpha")}.png'
+                            refined_mask=ARTIFACTS_DIR/f'{new_id("refined-alpha")}.png'
+                            cv2.imwrite(str(initial_mask),cutout[:,:,3])
+                            try:
+                                segment(Path(source['path']),refined_mask,'vitmatte',options,job,ROOT,mask=initial_mask)
+                                matte=cv2.imread(str(refined_mask),cv2.IMREAD_GRAYSCALE)
+                                if matte is None or matte.shape!=cutout.shape[:2]:raise ValueError('Matting inválido.')
+                                cutout[:,:,3]=np.minimum(matte,image[:,:,3]) if has_alpha else matte
+                                engine_name+='-ViTMatte'
+                            except InterruptedError:raise
+                            except Exception as exc:
+                                failures.append(f'{engine}: refinamento indisponível; preservada máscara inicial: {exc}')
                         candidate_id = new_id('candidate')
                         path = ARTIFACTS_DIR / f'{candidate_id}.png'
                         ok, encoded = cv2.imencode('.png', cutout, [cv2.IMWRITE_PNG_COMPRESSION, 3])
@@ -366,7 +447,12 @@ def process_job(job_id: str) -> None:
                            warnings=failures, progress={'completedTiles': 1, 'totalTiles': 1},
                            metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': psutil.Process().memory_info().rss, 'modelId': 'BEN2/BiRefNet A/B'})
                 return
-            generative = bool(options.get('useAI', False))
+            generative = bool(options.get('useAI', False)) and options.get('enhanceMode') != 'faithful'
+            if options.get('enhance'):
+                luminance=cv2.cvtColor(image[:,:,:3],cv2.COLOR_BGR2GRAY)
+                noise=float(np.median(np.abs(luminance.astype(np.float32)-cv2.medianBlur(luminance,3).astype(np.float32))))
+                options={**options,'denoise':min(35,round(noise*3)),'sharpness':int(options.get('sharpness',25))}
+                print(f'[MELHORAR] modo={options.get("enhanceMode")} | ruído={noise:.2f} | redução={options["denoise"]}% | generativo={generative}',flush=True)
             if generative:
                 if operation not in ('upscale', 'black-white'):
                     raise ValueError('Reconstrução IA disponível em Ampliar e Preto e branco.')
@@ -374,9 +460,13 @@ def process_job(job_id: str) -> None:
                 release_optional_models()
                 gc.collect()
                 torch.cuda.empty_cache()
-                from colab.generative import reconstruct
                 reconstructed = ARTIFACTS_DIR / f'{new_id("flux")}.png'
-                reconstruct(Path(source['path']), reconstructed, job, ROOT)
+                if options.get('restorationEngine')=='diffbir':
+                    from colab.diffbir_engine import restore
+                    restore(Path(source['path']),reconstructed,options,job,ROOT)
+                else:
+                    from colab.generative import reconstruct
+                    reconstruct(Path(source['path']), reconstructed, job, ROOT)
                 image = cv2.imdecode(np.fromfile(reconstructed, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if image is None:
                     raise RuntimeError('A imagem produzida pelo FLUX não abriu corretamente.')
@@ -385,6 +475,10 @@ def process_job(job_id: str) -> None:
                 scale = int(options.get('scale', 4))
                 if scale not in (2, 4, 8):
                     raise ValueError('Use ampliação 2×, 4× ou 8×.')
+                pixels=width*height*scale*scale
+                available=psutil.virtual_memory().available
+                if pixels>180_000_000 or pixels*12>available*.7:
+                    raise ValueError(f'Saída {width*scale}×{height*scale} excede o orçamento seguro de RAM desta sessão. Volte à entrada original ou use uma escala menor.')
                 detailed = scale == 8 and options.get('detailMode') == 'detailed'
                 model_kind = options.get('upscaleModel', 'general')
                 model = get_model(model_kind, job)
@@ -419,7 +513,33 @@ def process_job(job_id: str) -> None:
             elif operation == 'remove-background':
                 models.clear()
                 release_optional_models()
-                output, model_id = remove_background(image, options, job)
+                engine=options.get('backgroundEngine','birefnet-hr')
+                if engine in ('finegrain','fey','lucida'):
+                    from colab.optional_models import segment
+                    mask_path=ARTIFACTS_DIR / f'{new_id("mask")}.png'
+                    segment(Path(source['path']),mask_path,engine,options,job,ROOT)
+                    alpha=cv2.imread(str(mask_path),cv2.IMREAD_GRAYSCALE)
+                    if alpha is None or alpha.shape!=image.shape[:2]:raise ValueError('Dimensão da máscara opcional inválida.')
+                    if has_alpha:alpha=np.minimum(alpha,image[:,:,3])
+                    output=np.dstack((image[:,:,:3],alpha));model_id=engine
+                else:
+                    output, model_id = remove_background(image, options, job)
+                if options.get('advancedMatting'):
+                    release_optional_models()
+                    from colab.optional_models import segment
+                    mask_path=ARTIFACTS_DIR / f'{new_id("trimap")}.png'
+                    matte_path=ARTIFACTS_DIR / f'{new_id("matte")}.png'
+                    cv2.imwrite(str(mask_path),output[:,:,3])
+                    try:
+                        segment(Path(source['path']),matte_path,'vitmatte',options,job,ROOT,mask=mask_path)
+                        refined=cv2.imread(str(matte_path),cv2.IMREAD_GRAYSCALE)
+                        if refined is None or refined.shape!=image.shape[:2]:raise ValueError('Matting retornou dimensões inválidas.')
+                        output[:,:,3]=np.minimum(refined,image[:,:,3]) if has_alpha else refined
+                        model_id+='-ViTMatte'
+                    except InterruptedError:raise
+                    except Exception as exc:
+                        job.setdefault('warnings',[]).append(f'Matting indisponível; máscara inicial mantida: {exc}')
+                        print(f'[MATTING] Falha, preservando máscara inicial: {exc}',flush=True)
                 filename = operation_filename(source['filename'], operation, model_id)
             elif operation == 'clean':
                 output, model_id = clean_image(image, options, job)
@@ -427,12 +547,25 @@ def process_job(job_id: str) -> None:
             elif operation == 'black-white':
                 output, model_id = black_white(image, options, job)
                 filename = operation_filename(source['filename'], operation, model_id)
+            elif operation == 'mask-correct':
+                base_id = source.get('maskSourceId', source.get('parentId'))
+                base = artifacts.get(base_id, source)
+                base_image = cv2.imdecode(np.fromfile(base['path'], dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+                if base_image is None:
+                    raise ValueError('Imagem de origem não disponível para correção.')
+                output = correct_mask(image, base_image, options.get('strokes', []))
+                model_id = 'Manual-alpha'
+                filename = operation_filename(source['filename'], operation, model_id)
             else:
                 raise ValueError('Operação inválida.')
 
             if generative:
-                model_id = f'FLUX.2-klein-4B+{model_id}'
+                restoration_name='DiffBIR-v2.1' if options.get('restorationEngine')=='diffbir' else 'FLUX.2-klein-4B'
+                model_id = f'{restoration_name}+{model_id}'
                 filename = operation_filename(source['filename'], operation, model_id)
+            if operation == 'upscale' and options.get('prepareBW'):
+                output, threshold_engine=black_white(output,{'thresholdMode':'auto'},job)
+                model_id+='+'+threshold_engine
 
             job['phase'] = 'encoding'
             result_id = new_id('img')
@@ -448,10 +581,13 @@ def process_job(job_id: str) -> None:
             out_height, out_width = output.shape[:2]
             root_id, version_number = version_identity(source)
             result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id'], 'rootId': root_id, 'versionNumber': version_number, 'operation': operation, 'engine': model_id, 'options': options}
-            if generative:
+            if generative or operation == 'remove-background' or options.get('enhance'):
                 result['candidate'] = True
-                result['warning'] = 'Reconstrução generativa: confira letras, cores e geometria. Fundo branco; transparência não é inferida pelo FLUX.'
+                result['warning'] = 'Confira letras, cores, geometria e bordas antes de aceitar.' + (' Reconstrução generativa pode alterar detalhes e usa fundo branco.' if generative else '')
             artifacts[result_id] = result
+            if operation == 'mask-correct':
+                result['maskSourceId'] = base['id']
+            result['fidelity'] = fidelity(cv2.imdecode(np.fromfile(source['path'], dtype=np.uint8), cv2.IMREAD_UNCHANGED), output, with_ocr=generative or bool(options.get('enhance')))
             job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': total, 'totalTiles': total}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
     except InterruptedError as exc:
         job.update(status='cancelled', phase='cancelled', error={'code': 'CANCELLED', 'message': str(exc)})
@@ -548,7 +684,7 @@ async def create_job(request: JobRequest) -> dict[str, Any]:
     gpu_operations = ('upscale', 'remove-background')
     if (request.operation in gpu_operations or request.options.get('useAI')) and not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada. No Colab, selecione um ambiente T4.')
-    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize')
+    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize', 'mask-correct')
     if request.operation not in allowed or request.artifactId not in artifacts:
         raise HTTPException(400, 'Imagem ou operação inválida.')
     if artifacts[request.artifactId].get('candidate'):

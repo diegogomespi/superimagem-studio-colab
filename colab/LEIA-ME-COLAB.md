@@ -1,6 +1,6 @@
 # SuperImagem GPU T4
 
-Esta primeira versão executa somente ampliação de imagem em GPU CUDA.
+Estúdio com ampliação, recorte, limpeza, P&B, vetorização e módulos opcionais. Veja `ENTREGA_16_ITENS.md` para distinguir código implementado de validação real na T4.
 
 ## Como abrir
 
@@ -10,7 +10,7 @@ Esta primeira versão executa somente ampliação de imagem em GPU CUDA.
 4. Execute a única célula **INICIAR SUPERIMAGEM GPU T4**.
 5. Clique em **ABRIR SUPERIMAGEM EM NOVA ABA**. A interface funciona em uma página separada.
 5. O sistema atualizado é baixado automaticamente do GitHub.
-6. A interface aparece dentro do próprio notebook.
+6. A interface abre fora do notebook; acompanhe instalação e downloads no log expandido do Colab.
 
 ## Modos
 

@@ -139,6 +139,11 @@ def run_from_colab(
         if shutil.which("potrace") is None:
             _run(["apt-get", "update", "-qq"], "Instalando vetorizador", "Atualizando a lista de pacotes...", 60)
             _run(["apt-get", "install", "-y", "-qq", "potrace"], "Instalando vetorizador", "Instalando Potrace para preto e branco...", 65)
+        if shutil.which('tesseract') is None:
+            try:
+                _run(['apt-get','install','-y','tesseract-ocr'], 'Preparando verificação de letras', 'Instalando OCR auxiliar Tesseract...', 68)
+            except Exception as exc:
+                _append(f'OCR auxiliar indisponível: {exc}. A revisão de contornos continua disponível.')
 
         _update("Carregando aplicação", "Iniciando o servidor da página externa...", 78)
         subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
