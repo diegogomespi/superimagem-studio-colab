@@ -6,12 +6,14 @@ vtracer==1.0.0a4 instalados.
 from __future__ import annotations
 
 import tempfile
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from colab.operations import black_white, clean_image, vectorize
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from colab.operations import black_white, clean_image, prepare_potrace_bitmap, vectorize
 
 
 def main() -> None:
@@ -28,6 +30,13 @@ def main() -> None:
         assert output.shape == image.shape and output.dtype == np.uint8
         assert job["progress"]["completedTiles"] == job["progress"]["totalTiles"]
 
+    transparent = np.zeros((40, 60, 4), dtype=np.uint8)
+    transparent[10:30, 20:40, :3] = 0
+    transparent[10:30, 20:40, 3] = 255
+    bitmap = prepare_potrace_bitmap(transparent)
+    assert np.all(bitmap[:8] == 255), "O fundo transparente precisa virar branco para o Potrace."
+    assert np.all(bitmap[12:28, 22:38] == 0), "A arte preta opaca precisa continuar preta."
+
     with tempfile.TemporaryDirectory() as directory:
         source = Path(directory) / "input.png"
         target = Path(directory) / "output.svg"
@@ -37,7 +46,7 @@ def main() -> None:
         assert target.stat().st_size > 100
         assert "<svg" in target.read_text(encoding="utf-8")
 
-    print("OK: limpeza, preto e branco e SVG VTracer validados.")
+    print("OK: limpeza, P&B, alpha para Potrace e SVG VTracer validados.")
 
 
 if __name__ == "__main__":

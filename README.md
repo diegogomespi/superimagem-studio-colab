@@ -12,6 +12,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 - Limpeza independente para foto/ilustração e limpeza do canal alpha.
 - Conversão P&B independente com limiar adaptativo, Otsu ou manual.
 - Vetorização colorida VTracer 1.0 (mosaico sem frestas) e Potrace para arte monocromática.
+- Vetorização P&B respeita o alpha: pixels transparentes são ignorados no traçado e o SVG permanece sem fundo.
 - Processamento CUDA FP16 em blocos de 400 px com sobreposição.
 - PNG transparente preservado sem converter o fundo para branco.
 - Comparação HD progressiva: abre com preview leve e carrega uma inspeção WebP de até 4096 px para revelar a diferença real do upscale sem travar a página.

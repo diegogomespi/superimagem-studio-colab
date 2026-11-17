@@ -161,16 +161,37 @@ def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
     return output, f"threshold-{method}"
 
 
+def prepare_potrace_bitmap(image: np.ndarray) -> np.ndarray:
+    """Converte raster para PBM respeitando a transparência.
+
+    Potrace não interpreta alpha. Cores RGB existentes sob pixels transparentes
+    (frequentemente preto) não podem participar do limiar, portanto o raster é
+    composto em branco antes da binarização.
+    """
+    if image.ndim == 2:
+        gray = image
+    elif image.shape[2] == 4:
+        alpha = image[:, :, 3:4].astype(np.float32) / 255.0
+        bgr = image[:, :, :3].astype(np.float32)
+        composited = np.rint(bgr * alpha + 255.0 * (1.0 - alpha)).astype(np.uint8)
+        gray = cv2.cvtColor(composited, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = cv2.cvtColor(image[:, :, :3], cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
+
+
 def vectorize(source_path: Path, output_path: Path, options: dict[str, Any], job: dict[str, Any]) -> str:
     job.update(status="processing", phase="vectorizing", progress={"completedTiles": 0, "totalTiles": 1})
     mode = options.get("vectorMode", "color")
     engine = options.get("vectorEngine", "vtracer")
     if engine == "potrace" and mode == "bw":
         temporary = output_path.with_suffix(".pbm")
-        image = cv2.imread(str(source_path), cv2.IMREAD_GRAYSCALE)
+        encoded = np.fromfile(source_path, dtype=np.uint8)
+        image = cv2.imdecode(encoded, cv2.IMREAD_UNCHANGED)
         if image is None:
             raise ValueError("Não foi possível abrir a imagem para vetorizar.")
-        _, binary = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        binary = prepare_potrace_bitmap(image)
         cv2.imwrite(str(temporary), binary)
         try:
             subprocess.run(["potrace", str(temporary), "--svg", "--output", str(output_path), "--turdsize", str(int(options.get("speckle", 2))), "--alphamax", "1.0", "--opttolerance", str(float(options.get("curveTolerance", 0.2)))], check=True, capture_output=True, text=True)
