@@ -34,3 +34,5 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 O primeiro processamento baixa o peso oficial do modelo escolhido. Arquivos enviados e resultados ficam somente no armazenamento temporário da sessão do Colab.
 
 Mais detalhes: [colab/LEIA-ME-COLAB.md](colab/LEIA-ME-COLAB.md).
+
+Planejamento e andamento: [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.md).
