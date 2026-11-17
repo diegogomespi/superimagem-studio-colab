@@ -155,12 +155,17 @@ def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
         coverage = image[:, :, 3:4].astype(np.float32) / 255.0
         bgr = np.rint(bgr * coverage + 255 * (1 - coverage)).astype(np.uint8)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    method = options.get("thresholdMode", "adaptive")
+    method = options.get("thresholdMode", "auto")
+    has_transparency = image.shape[2] == 4 and bool(np.any(image[:, :, 3] < 255))
     if method == 'auto':
-        # Fundo irregular favorece limiar local; arte plana usa Otsu.
-        illumination = cv2.GaussianBlur(gray, (0, 0), max(1, min(gray.shape) / 16))
-        method = 'sauvola' if float(illumination.std()) > 30 else 'otsu'
-    if method == "manual":
+        # Variação de cores da arte não comprova iluminação irregular.
+        # O alpha já descreve a silhueta; não segmentar novamente seus preenchimentos.
+        method = 'solid' if has_transparency else 'otsu'
+    if method == 'solid':
+        if not has_transparency:
+            raise ValueError('Logo sólida requer uma imagem com transparência. Use Otsu ou Manual para imagens com fundo.')
+        mask = np.zeros(gray.shape, dtype=np.uint8)
+    elif method == "manual":
         _, mask = cv2.threshold(gray, int(options.get("threshold", 128)), 255, cv2.THRESH_BINARY)
     elif method == "otsu":
         _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)

@@ -53,7 +53,7 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - O resultado generativo exige Aceitar ou Descartar antes de continuar. O original permanece disponível. FLUX retorna RGB com fundo branco, não SVG nem alpha inferido. Confira letras e geometria manualmente.
 - A inicialização lista o catálogo e o estado do cache. Downloads e carregamentos durante o uso aparecem no log vivo do Colab, com origem, arquivo, bytes/progresso quando disponíveis e confirmação de hash para os pesos oficiais de upscale.
 - Download concluído, checksum validado e modelo carregado são eventos distintos. As bibliotecas Hugging Face exibem seus próprios progressos; não se declara SHA verificado para arquivos sem verificação explícita do aplicativo.
-- Sauvola e seleção automática Otsu/Sauvola disponíveis no P&B. A escolha automática é uma heurística de iluminação e exige revisão visual.
+- P&B: Automático usa Logo sólida quando existe transparência real e Otsu para fundos opacos. Logo sólida torna RGB preto e mantém o alfa exato, incluindo furos, acentos e cobertura suave. Não restaura detalhes ausentes nem remove resíduos do alfa. Sauvola/Adaptativo continuam disponíveis para documentos com iluminação irregular, sem serem escolhidos por variação de cores da logo.
 - Recorte Automático implementa candidatos BEN2/BiRefNet sequenciais, escolha, comparação A/B, aprovação e descarte. Teste de orquestração usa motores substitutos; qualidade dos pesos ainda precisa de T4.
 - Instalação FLUX cria venv sem ensurepip, usando pip --python direcionado ao ambiente separado. Teste reproduz indisponibilidade de ensurepip sem baixar modelos.
 - Log do Colab abre expandido, preserva até 3000 linhas recentes e mostra saída não silenciosa do pip; logs dos workers incluem também as últimas linhas antes do encerramento.
@@ -61,7 +61,7 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - Estado detalhado dos 16 itens, versões e procedimento de teste: [ENTREGA_16_ITENS.md](ENTREGA_16_ITENS.md). Código integrado não equivale a aprovação de qualidade na T4/CorelDRAW.
 - Aba IA gera candidato no tamanho da entrada sem executar upscale em seguida. FLUX recebe referência proporcional com margem; o quadro é restaurado ao tamanho original. Isso corrige o encaixe, mas não impede que o modelo altere letras/desenhos.
 - Tarefas ativas são recuperadas por `/api/jobs/active`; 409 inclui a tarefa que bloqueou a solicitação. Uma tarefa só é liberada como interrompida quando sua execução não existe ou já terminou, nunca apenas por estar lenta.
-- Painel central mostra etapa, tempo, heartbeat, cancelamento e porcentagem dos passos quando disponível. Downloads/codificação sem progresso mensurável ficam indeterminados; não há porcentagem fictícia.
+- Indicador central discreto mostra spinner e progresso mensurável quando disponível. Cancelamento permanece no painel lateral; detalhes técnicos permanecem no log Colab. Não há porcentagem fictícia.
 - DiffBIR aplica patch versionado para a anotação upstream `torch.Tuple`, incompatível com o PyTorch atual. A preparação do ambiente v2 também exige `wcwidth>=0.3.5`. O teste `validate_diffbir_compat.py` reproduz o erro e valida a aplicação repetida da correção sem baixar pesos.
 
 - TypeScript estrito e build Vite.

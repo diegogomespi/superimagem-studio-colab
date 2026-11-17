@@ -49,7 +49,7 @@ export interface JobOptions {
   cleanStrength?: number;
   cleanAlpha?: boolean;
   autoContrast?: boolean;
-  thresholdMode?: 'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola';
+  thresholdMode?: 'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola' | 'solid';
   threshold?: number;
   vectorMode?: 'color' | 'bw';
   vectorEngine?: 'vtracer' | 'potrace' | 'inkvec';

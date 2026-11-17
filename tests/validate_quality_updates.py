@@ -25,6 +25,24 @@ def main():
     out, _ = clean_image(rgba, {'cleanAlpha': False, 'cleanStrength': 0, 'autoContrast': False}, {})
     assert np.array_equal(out, rgba)
     opaque = snapshot.copy()
+    # Logo colorida com furos, acento isolado e cobertura parcial nas bordas.
+    logo = np.zeros((40, 60, 4), np.uint8)
+    logo[10:35, 8:50] = (170, 170, 170, 255)
+    logo[15:25, 20:30, 3] = 0
+    logo[5, 15] = (30, 60, 150, 255)
+    logo[10, 8:50, 3] = 96
+    original = logo.copy()
+    for mode in ('solid', 'auto'):
+        out, engine = black_white(logo, {'thresholdMode': mode}, {})
+        assert engine == 'threshold-solid'
+        assert np.all(out[:, :, :3] == 0), 'Preenchimento ganhou buracos brancos'
+        assert np.array_equal(out[:, :, 3], logo[:, :, 3]), 'Cobertura, furos ou acentos alterados'
+        assert np.array_equal(logo, original), 'Original alterada'
+    try:
+        black_white(np.full((10, 10, 3), 255, np.uint8), {'thresholdMode': 'solid'}, {})
+        raise AssertionError('Fundo opaco foi aceito como silhueta')
+    except ValueError:
+        pass
     opaque[:, :, 3] = 255
     for method in ('otsu', 'manual', 'auto'):
         out, _ = black_white(opaque, {'thresholdMode': method, 'threshold': 128}, {})
