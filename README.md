@@ -14,7 +14,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 - Conversão P&B independente com limiar adaptativo, Otsu ou manual.
 - Vetorização colorida VTracer 1.0 (mosaico sem frestas) e Potrace para arte monocromática.
 - Vetorização P&B respeita o alpha: pixels transparentes são ignorados no traçado e o SVG permanece sem fundo.
-- Processamento CUDA FP16 em blocos de 400 px com sobreposição.
+- Processamento CUDA em blocos de 400 px com sobreposição: FP16 nos RealESRGAN e FP32 no SwinIR, conforme a compatibilidade de cada arquitetura.
 - PNG transparente preservado sem converter o fundo para branco.
 - Comparação HD progressiva: abre com preview leve e carrega uma inspeção WebP de até 4096 px para revelar a diferença real do upscale sem travar a página.
 - Zoom ancorado no ponteiro do mouse, arraste para navegar e divisor antes/depois alinhado.

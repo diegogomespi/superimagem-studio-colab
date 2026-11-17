@@ -162,6 +162,23 @@ function App() {
       setArtifact(item); setOriginal(item); setVersions([item]); setNavigationTrail([item.id]); setNavigationIndex(0); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
+  useEffect(() => {
+    const pasteImage = (event: ClipboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea'))) return;
+      const item = Array.from(event.clipboardData?.items ?? []).find(candidate => candidate.type.startsWith('image/'));
+      const file = item?.getAsFile();
+      if (!file) return;
+      event.preventDefault();
+      if (submitting || (job && !terminal.has(job.status))) {
+        setError('Aguarde o processamento terminar antes de colar outra imagem.');
+        return;
+      }
+      void upload(file);
+    };
+    window.addEventListener('paste', pasteImage);
+    return () => window.removeEventListener('paste', pasteImage);
+  });
   const execute = async () => {
     if (!artifact || submitLock.current || (job && !terminal.has(job.status))) return;
     submitLock.current = true; setSubmitting(true);

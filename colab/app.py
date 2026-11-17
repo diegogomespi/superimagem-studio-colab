@@ -61,6 +61,9 @@ MODEL_SPECS = {
         'url': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x4.pth',
         'file': '001_classicalSR_DF2K_s64w8_SwinIR-M_x4.pth',
         'sha256': '4e78e33f22c1aa8a773db0cf4a7381bae97c2362c717f155439ebc690cbd9215',
+        # O Spandrel declara esta arquitetura incompatível com half precision.
+        'precision': 'fp32',
+        'input_multiple': 8,
         # Carregado somente quando escolhido para não atrasar a abertura normal.
         'preload': False,
     },
@@ -195,7 +198,9 @@ def get_model(kind: str, job: dict[str, Any]) -> Any:
     job['phase'] = 'loading_model'
     if kind not in models:
         download(spec['url'], model_path, spec['sha256'])
-        descriptor = ModelLoader().load_from_file(str(model_path)).eval().cuda().half()
+        descriptor = ModelLoader().load_from_file(str(model_path)).eval().cuda()
+        if spec.get('precision', 'fp16') == 'fp16':
+            descriptor = descriptor.half()
         if int(descriptor.scale) != 4:
             raise RuntimeError(f'Escala inesperada do modelo: {descriptor.scale}.')
         models[kind] = descriptor
@@ -223,7 +228,7 @@ def extend_transparent_colors(bgra: np.ndarray) -> np.ndarray:
     return bgr
 
 
-def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], completed: list[int], total: int, tile: int = 400) -> np.ndarray:
+def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], completed: list[int], total: int, tile: int = 400, use_half: bool = True, input_multiple: int = 1) -> np.ndarray:
     height, width = bgr.shape[:2]
     native = 4
     output = np.empty((height * native, width * native, 3), dtype=np.uint8)
@@ -236,11 +241,18 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
             x0, y0 = max(0, x - pad), max(0, y - pad)
             x1, y1 = min(width, x + core_w + pad), min(height, y + core_h + pad)
             patch = cv2.cvtColor(bgr[y0:y1, x0:x1], cv2.COLOR_BGR2RGB)
-            tensor = torch.from_numpy(np.ascontiguousarray(patch.transpose(2, 0, 1))).unsqueeze(0).cuda().half().div_(255.0)
+            patch_h, patch_w = patch.shape[:2]
+            extra_h = (-patch_h) % input_multiple
+            extra_w = (-patch_w) % input_multiple
+            if extra_h or extra_w:
+                patch = cv2.copyMakeBorder(patch, 0, extra_h, 0, extra_w, cv2.BORDER_REFLECT_101)
+            dtype = torch.float16 if use_half else torch.float32
+            tensor = torch.from_numpy(np.ascontiguousarray(patch.transpose(2, 0, 1))).unsqueeze(0).to(device='cuda', dtype=dtype).div_(255.0)
             with torch.inference_mode():
                 prediction = model(tensor).clamp_(0, 1)
             result = prediction[0].float().cpu().numpy().transpose(1, 2, 0)
             result = cv2.cvtColor(np.rint(result * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+            result = result[:patch_h * native, :patch_w * native]
             crop_x, crop_y = (x - x0) * native, (y - y0) * native
             output[y * native:(y + core_h) * native, x * native:(x + core_w) * native] = result[crop_y:crop_y + core_h * native, crop_x:crop_x + core_w * native]
             completed[0] += 1
@@ -249,7 +261,7 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
     return output
 
 
-def upscale_with_fallback(bgr: np.ndarray, model: Any, job: dict[str, Any]) -> tuple[np.ndarray, int]:
+def upscale_with_fallback(bgr: np.ndarray, model: Any, job: dict[str, Any], use_half: bool = True, input_multiple: int = 1) -> tuple[np.ndarray, int]:
     """Reduz automaticamente o bloco se a GPU não tiver memória suficiente."""
     height, width = bgr.shape[:2]
     last_error: Exception | None = None
@@ -258,7 +270,7 @@ def upscale_with_fallback(bgr: np.ndarray, model: Any, job: dict[str, Any]) -> t
         total = tile_count(width, height, tile)
         job['progress'] = {'completedTiles': 0, 'totalTiles': total, 'tileSize': tile}
         try:
-            return upscale_rgb_tiled(bgr, model, job, completed, total, tile), total
+            return upscale_rgb_tiled(bgr, model, job, completed, total, tile, use_half=use_half, input_multiple=input_multiple), total
         except torch.cuda.OutOfMemoryError as exc:
             last_error = exc
             job['phase'] = 'reducing_tile'
@@ -302,13 +314,17 @@ def process_job(job_id: str) -> None:
                 if scale not in (2, 4, 8):
                     raise ValueError('Use ampliação 2×, 4× ou 8×.')
                 detailed = scale == 8 and options.get('detailMode') == 'detailed'
-                model = get_model(options.get('upscaleModel', 'general'), job)
+                model_kind = options.get('upscaleModel', 'general')
+                model = get_model(model_kind, job)
+                model_spec = MODEL_SPECS[model_kind]
                 job.update(status='processing', phase='inference')
                 source_bgr = extend_transparent_colors(image) if has_alpha else image[:, :, :3]
-                first4, total = upscale_with_fallback(source_bgr, model, job)
+                use_half = model_spec.get('precision', 'fp16') == 'fp16'
+                input_multiple = int(model_spec.get('input_multiple', 1))
+                first4, total = upscale_with_fallback(source_bgr, model, job, use_half=use_half, input_multiple=input_multiple)
                 if detailed:
                     job['phase'] = 'second_pass'
-                    second4, total = upscale_with_fallback(first4, model, job)
+                    second4, total = upscale_with_fallback(first4, model, job, use_half=use_half, input_multiple=input_multiple)
                     target_size = (width * 8, height * 8)
                     rgb = cv2.resize(second4, target_size, interpolation=cv2.INTER_LANCZOS4)
                     del second4

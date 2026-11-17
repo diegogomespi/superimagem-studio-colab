@@ -97,7 +97,7 @@ Fluxos igualmente válidos:
 - [x] Real-ESRGAN x4plus para Foto/geral.
 - [x] Real-ESRGAN x4plus Anime 6B para Ilustração/estampa.
 - [x] SwinIR Classical x4 oficial, carregado sob demanda, para refinar logotipos, letras e bordas antes de vetorizar.
-- [x] Processamento CUDA FP16 em blocos com sobreposição.
+- [x] Processamento CUDA em blocos com sobreposição: FP16 nos RealESRGAN e FP32 no SwinIR.
 - [x] Redução automática do bloco quando faltar VRAM.
 - [x] Preservar transparência ampliando RGB e alpha separadamente.
 - [x] Opções 2×, 4× e 8×.
