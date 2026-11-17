@@ -31,7 +31,7 @@ export interface JobOptions {
   detailMode?: 'faithful' | 'detailed';
   denoise?: number;
   sharpness?: number;
-  backgroundEngine?: 'birefnet-hr' | 'ben2';
+  backgroundEngine?: 'auto' | 'birefnet-hr' | 'ben2';
   refineEdges?: boolean;
   cleanStyle?: 'illustration' | 'photo';
   cleanStrength?: number;
@@ -51,6 +51,8 @@ export interface JobOptions {
 }
 
 export interface JobRecord {
+  candidateArtifactIds?: string[];
+  warnings?: string[];
   id: string;
   artifactId: string;
   operation: Tool;

@@ -54,7 +54,10 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - A inicialização lista o catálogo e o estado do cache. Downloads e carregamentos durante o uso aparecem no log vivo do Colab, com origem, arquivo, bytes/progresso quando disponíveis e confirmação de hash para os pesos oficiais de upscale.
 - Download concluído, checksum validado e modelo carregado são eventos distintos. As bibliotecas Hugging Face exibem seus próprios progressos; não se declara SHA verificado para arquivos sem verificação explícita do aplicativo.
 - Sauvola e seleção automática Otsu/Sauvola disponíveis no P&B. A escolha automática é uma heurística de iluminação e exige revisão visual.
-- Ainda pendentes: DiffBIR, comparação de recortadores A/B, Finegrain, FeyNoBg, Lucida, ViTMatte/SDMatte, pincéis, Inkvec e histórico múltiplo. Esta atualização não declara o conjunto completo pronto.
+- Recorte Automático implementa candidatos BEN2/BiRefNet sequenciais, escolha, comparação A/B, aprovação e descarte. Teste de orquestração usa motores substitutos; qualidade dos pesos ainda precisa de T4.
+- Instalação FLUX cria venv sem ensurepip, usando pip --python direcionado ao ambiente separado. Teste reproduz indisponibilidade de ensurepip sem baixar modelos.
+- Log do Colab abre expandido, preserva até 3000 linhas recentes e mostra saída não silenciosa do pip; logs dos workers incluem também as últimas linhas antes do encerramento.
+- Ainda pendentes: DiffBIR, Finegrain, FeyNoBg, Lucida, ViTMatte/SDMatte, pincéis, Inkvec e histórico múltiplo. Esta atualização não declara o conjunto completo pronto.
 
 - TypeScript estrito e build Vite.
 - Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.

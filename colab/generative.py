@@ -22,6 +22,11 @@ def run_checked(command, job, log):
                 if job.get('cancelRequested'):
                     raise InterruptedError('Processamento cancelado.')
                 time.sleep(0.25)
+            with log.open('r', encoding='utf-8', errors='replace') as reader:
+                reader.seek(offset)
+                tail = reader.read()
+            if tail:
+                print(tail, end='', flush=True)
             if process.returncode:
                 detail = log.read_text(encoding='utf-8', errors='replace')[-2500:]
                 raise RuntimeError(f'Falha no módulo opcional FLUX. O processamento convencional continua disponível.\n{detail}')
@@ -43,10 +48,12 @@ def reconstruct(source: Path, target: Path, job: dict, root: Path):
     job.update(status='loading_model', phase='installing_flux')
     print('[FLUX] Origem: https://huggingface.co/black-forest-labs/FLUX.2-klein-4B | pesos sob demanda | NF4 / cálculo FP16', flush=True)
     print('[FLUX] Dependências: diffusers 0.37.1, transformers 4.57.6, accelerate 1.12.0, bitsandbytes 0.49.1', flush=True)
-    if not python.exists():
-        venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
+    # Colab pode não fornecer ensurepip/python3-venv. Criação sem bootstrap
+    # e pip do processo pai direcionado explicitamente ao interpretador isolado.
+    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(environment)
+    print(f'[FLUX] Ambiente isolado criado sem ensurepip: {python}', flush=True)
     if not marker.exists():
-        run_checked([str(python), '-m', 'pip', 'install', 'diffusers==0.37.1',
+        run_checked([sys.executable, '-m', 'pip', '--python', str(python), 'install', '--progress-bar', 'on', 'diffusers==0.37.1',
                      'transformers==4.57.6', 'accelerate==1.12.0', 'bitsandbytes==0.49.1',
                      'sentencepiece==0.2.1', 'protobuf>=4,<7'], job, log)
         marker.touch()

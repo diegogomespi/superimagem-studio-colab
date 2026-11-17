@@ -22,7 +22,7 @@ def _append(message: object) -> None:
     for line in str(message).replace("\r", "").split("\n"):
         if line.strip():
             LOGS.append(line.rstrip())
-    del LOGS[:-300]
+    del LOGS[:-3000]
 
 
 def _render(stage: str, detail: str, progress: int, *, error: str = "", page_url: str = "") -> str:
@@ -56,7 +56,7 @@ def _render(stage: str, detail: str, progress: int, *, error: str = "", page_url
         <p style='color:{"#ff8e8e" if error else "#b7a8a3"};min-height:20px'>{safe_detail}</p>
         {action}
       </div>
-      <details {'open' if error else ''} style='background:#08080c;border:1px solid #33201c;border-radius:14px;padding:14px;color:#ddd'>
+      <details open style='background:#08080c;border:1px solid #33201c;border-radius:14px;padding:14px;color:#ddd'>
         <summary style='cursor:pointer;font-weight:700;color:#fff'>Log completo da instalação e inicialização</summary>
         <div style='text-align:right;margin:10px 0'>
           <button onclick="navigator.clipboard.writeText(document.getElementById('superimagem-log').value)" style='background:#2b1712;color:#fff;border:1px solid #6d3022;border-radius:8px;padding:8px 13px;cursor:pointer'>Copiar log</button>
@@ -130,7 +130,7 @@ def run_from_colab(
         _append(f"VERSÃO GITHUB CARREGADA: {commit}")
 
         _run(
-            [sys.executable, "-m", "pip", "install", "-q", "-r", str(repo / "colab" / "requirements-colab.txt")],
+            [sys.executable, "-m", "pip", "install", "--progress-bar", "on", "-r", str(repo / "colab" / "requirements-colab.txt")],
             "Instalando dependências",
             "Preparando ampliação, recorte e vetorização...",
             55,

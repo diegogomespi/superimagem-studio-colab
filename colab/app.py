@@ -326,6 +326,46 @@ def process_job(job_id: str) -> None:
                 raise ValueError('Não foi possível abrir a imagem raster. Para continuar após um SVG, volte para uma versão PNG.')
             has_alpha = image.ndim == 3 and image.shape[2] == 4
             height, width = image.shape[:2]
+            if operation == 'remove-background' and options.get('backgroundEngine') == 'auto':
+                candidate_ids = []
+                failures = []
+                for engine in ('ben2', 'birefnet-hr'):
+                    if job.get('cancelRequested'):
+                        raise InterruptedError('Processamento cancelado.')
+                    models.clear()
+                    release_optional_models()
+                    print(f'[RECORTE A/B] Executando {engine} sobre a mesma entrada {source["id"]}', flush=True)
+                    try:
+                        candidate_options = {**options, 'backgroundEngine': engine}
+                        cutout, engine_name = remove_background(image.copy(), candidate_options, job)
+                        candidate_id = new_id('candidate')
+                        path = ARTIFACTS_DIR / f'{candidate_id}.png'
+                        ok, encoded = cv2.imencode('.png', cutout, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+                        if not ok:
+                            raise RuntimeError('Falha ao codificar candidato.')
+                        encoded.tofile(path)
+                        preview_path = create_preview(cutout, ARTIFACTS_DIR / f'{candidate_id}-preview.png')
+                        inspect_path = create_inspection_preview(cutout, ARTIFACTS_DIR / f'{candidate_id}-inspect.webp')
+                        root_id, number = version_identity(source)
+                        artifacts[candidate_id] = dict(id=candidate_id, filename=operation_filename(source['filename'], operation, engine_name),
+                            mime='image/png', width=width, height=height, hasAlpha=True, path=str(path), previewPath=str(preview_path),
+                            inspectPath=str(inspect_path), webpPath=None, parentId=source['id'], rootId=root_id, versionNumber=number,
+                            operation=operation, engine=engine_name, options=candidate_options, candidate=True,
+                            warning='Compare cabelo, mãos e resíduos antes de aceitar o recorte.')
+                        candidate_ids.append(candidate_id)
+                    except InterruptedError:
+                        raise
+                    except Exception as error:
+                        failures.append(f'{engine}: {error}')
+                        print(f'[RECORTE A/B] FALHA {engine}: {error}', flush=True)
+                    finally:
+                        release_optional_models()
+                if not candidate_ids:
+                    raise RuntimeError('Nenhum recortador concluiu. ' + ' | '.join(failures))
+                job.update(status='done', phase='done', resultArtifactId=candidate_ids[0], candidateArtifactIds=candidate_ids,
+                           warnings=failures, progress={'completedTiles': 1, 'totalTiles': 1},
+                           metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': psutil.Process().memory_info().rss, 'modelId': 'BEN2/BiRefNet A/B'})
+                return
             generative = bool(options.get('useAI', False))
             if generative:
                 if operation not in ('upscale', 'black-white'):

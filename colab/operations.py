@@ -89,8 +89,7 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
         prediction = torch.nn.functional.interpolate(prediction, size=(image.shape[0], image.shape[1]), mode="bilinear", align_corners=False)
     alpha = np.rint(prediction[0, 0].float().cpu().numpy() * 255).astype(np.uint8)
     alpha = _combine_alpha(image, alpha)
-    if refine:
-        alpha = cv2.medianBlur(alpha, 3)
+    # Preserve o alpha contínuo do modelo: mediana não é matting de cabelo.
     output = image.copy() if image.ndim == 3 and image.shape[2] == 4 else np.dstack((image[:, :, :3], alpha))
     output[:, :, 3] = alpha
     del tensor, prediction
