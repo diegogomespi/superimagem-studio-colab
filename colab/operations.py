@@ -121,12 +121,9 @@ def clean_image(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
     if alpha is not None and bool(options.get("cleanAlpha", True)):
         alpha[alpha <= int(options.get("alphaFloor", 4))] = 0
         alpha[alpha >= int(options.get("alphaCeiling", 251))] = 255
-        kernel = np.ones((3, 3), np.uint8)
-        alpha = cv2.morphologyEx(alpha, cv2.MORPH_OPEN, kernel)
-        alpha = cv2.morphologyEx(alpha, cv2.MORPH_CLOSE, kernel)
         output = np.dstack((bgr, alpha))
     else:
-        output = bgr
+        output = np.dstack((bgr, alpha)) if alpha is not None else bgr
     job["progress"]["completedTiles"] = 4
     return output, f"OpenCV-clean-{style}"
 
@@ -134,6 +131,9 @@ def clean_image(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
 def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any]) -> tuple[np.ndarray, str]:
     job.update(status="processing", phase="black_white", progress={"completedTiles": 0, "totalTiles": 3})
     bgr = image[:, :, :3]
+    if image.ndim == 3 and image.shape[2] == 4:
+        coverage = image[:, :, 3:4].astype(np.float32) / 255.0
+        bgr = np.rint(bgr * coverage + 255 * (1 - coverage)).astype(np.uint8)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     method = options.get("thresholdMode", "adaptive")
     if method == "manual":
@@ -150,8 +150,8 @@ def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
     if morphology:
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=min(3, morphology)) if morphology > 0 else cv2.erode(mask, kernel, iterations=min(3, -morphology))
-    if int(options.get("speckle", 2)) > 0:
-        mask = cv2.medianBlur(mask, 3)
+    # Pontos, acentos e traços de um pixel podem ser legítimos: não aplicar
+    # mediana global ao bitmap destinado a letras e serigrafia.
     job["progress"]["completedTiles"] = 2
     if image.ndim == 3 and image.shape[2] == 4:
         output = np.dstack((mask, mask, mask, image[:, :, 3]))
