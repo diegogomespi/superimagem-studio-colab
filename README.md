@@ -62,6 +62,7 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - Aba IA gera candidato no tamanho da entrada sem executar upscale em seguida. FLUX recebe referência proporcional com margem; o quadro é restaurado ao tamanho original. Isso corrige o encaixe, mas não impede que o modelo altere letras/desenhos.
 - Tarefas ativas são recuperadas por `/api/jobs/active`; 409 inclui a tarefa que bloqueou a solicitação. Uma tarefa só é liberada como interrompida quando sua execução não existe ou já terminou, nunca apenas por estar lenta.
 - Painel central mostra etapa, tempo, heartbeat, cancelamento e porcentagem dos passos quando disponível. Downloads/codificação sem progresso mensurável ficam indeterminados; não há porcentagem fictícia.
+- DiffBIR aplica patch versionado para a anotação upstream `torch.Tuple`, incompatível com o PyTorch atual. A preparação do ambiente v2 também exige `wcwidth>=0.3.5`. O teste `validate_diffbir_compat.py` reproduz o erro e valida a aplicação repetida da correção sem baixar pesos.
 
 - TypeScript estrito e build Vite.
 - Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.

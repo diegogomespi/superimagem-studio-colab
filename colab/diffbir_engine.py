@@ -4,11 +4,26 @@ import shutil
 import sys
 import tempfile
 import venv
+import subprocess
 from pathlib import Path
 from PIL import Image
 from colab.generative import run_checked
 
 REVISION='5c2d6c177c3f2965e6d33a32931248d242ef7b3d'
+
+
+def ensure_compatibility(repository, root, job, log):
+    patch=root/'colab/diffbir_torch_compat.patch'
+    command=['git','apply','--check',str(patch)]
+    check=subprocess.run(command,cwd=str(repository),capture_output=True,text=True)
+    if check.returncode==0:
+        run_checked(['git','apply',str(patch)],job,log,cwd=str(repository))
+        print('[DIFFBIR] Compatibilidade aplicada: torch.Tuple substituído por tuple[int, ...].',flush=True)
+    else:
+        reverse=subprocess.run(['git','apply','--reverse','--check',str(patch)],cwd=str(repository),capture_output=True,text=True)
+        if reverse.returncode:
+            raise RuntimeError('A correção de compatibilidade não corresponde ao código DiffBIR instalado. '+check.stderr[-800:])
+        print('[DIFFBIR] Correção torch.Tuple já aplicada.',flush=True)
 
 
 def restore(source,target,options,job,root):
@@ -21,14 +36,16 @@ def restore(source,target,options,job,root):
         repository.parent.mkdir(parents=True,exist_ok=True)
         run_checked(['git','clone','https://github.com/XPixelGroup/DiffBIR.git',str(repository)],job,log)
         run_checked(['git','checkout','--detach',REVISION],job,log,cwd=str(repository))
+    ensure_compatibility(repository,root,job,log)
     venv.EnvBuilder(with_pip=False,system_site_packages=True).create(environment)
     python=environment/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
-    marker=environment/'.ready-v1'
+    marker=environment/'.ready-v2'
     if not marker.exists():
         # Reutiliza torch/CUDA do Colab. Não instala o torch 2.2/cu118 antigo do upstream.
         run_checked([sys.executable,'-m','pip','--python',str(python),'install',
                      'omegaconf==2.3.0','ftfy==6.2.0','pytorch-lightning==2.5.6',
-                     'lpips==0.1.4','facexlib==0.3.0','torchsde==0.2.6','pandas>=2,<3'],job,log)
+                     'lpips==0.1.4','facexlib==0.3.0','torchsde==0.2.6','pandas>=2,<3',
+                     'wcwidth>=0.3.5,<1'],job,log)
         marker.touch()
     cache=os.environ.get('HF_HOME')
     if cache and not (repository/'weights').exists():

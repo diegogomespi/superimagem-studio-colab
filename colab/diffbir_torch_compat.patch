@@ -1,0 +1,12 @@
+diff --git a/diffbir/sampler/edm_sampler.py b/diffbir/sampler/edm_sampler.py
+--- a/diffbir/sampler/edm_sampler.py
++++ b/diffbir/sampler/edm_sampler.py
+@@ -142,7 +142,7 @@
+         model: ControlLDM,
+         device: str,
+         steps: int,
+-        x_size: torch.Tuple[int],
++        x_size: tuple[int, ...],
+         cond: Dict[str, torch.Tensor],
+         uncond: Dict[str, torch.Tensor],
+         cfg_scale: float,
