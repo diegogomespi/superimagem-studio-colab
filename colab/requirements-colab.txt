@@ -1,2 +1,6 @@
 spandrel==0.4.1
 python-multipart==0.0.20
+transformers>=4.46,<5
+huggingface-hub>=0.26,<2
+vtracer==1.0.0a4
+git+https://github.com/PramaLLC/BEN2.git@2c99a5da477b5523585bfa5c893888a6e818a8f6

@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
+from colab.operations import black_white, clean_image, remove_background, vectorize
 
 # BasicSR antigo importa um módulo renomeado nas versões novas do torchvision.
 from spandrel import ModelLoader
@@ -75,16 +76,10 @@ async def prevent_stale_interface(request, call_next):
     return response
 
 
-class JobOptions(BaseModel):
-    scale: int = 4
-    upscaleModel: str = 'general'
-    detailMode: str = 'faithful'
-
-
 class JobRequest(BaseModel):
     artifactId: str
     operation: str = 'upscale'
-    options: JobOptions = JobOptions()
+    options: dict[str, Any] = {}
 
 
 def new_id(prefix: str) -> str:
@@ -101,6 +96,18 @@ def processed_filename(original: str, scale: int, model_kind: str, detail_mode: 
     model_tag = 'RealESRGAN-x4plus' if model_kind == 'general' else 'RealESRGAN-anime-6B'
     mode_tag = f"_{'detalhado' if detail_mode == 'detailed' else 'fiel'}" if scale == 8 else ''
     return f'{stem}_upscale-{scale}x_{model_tag}{mode_tag}.{extension}'
+
+
+def operation_filename(original: str, operation: str, model_id: str, extension: str = 'png') -> str:
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', Path(original).stem).strip(' .')[:120] or 'imagem'
+    tags = {
+        'remove-background': 'sem-fundo',
+        'clean': 'limpa',
+        'black-white': 'preto-e-branco',
+        'vectorize': 'vetorizada',
+    }
+    safe_model = re.sub(r'[^A-Za-z0-9._-]+', '-', model_id).strip('-')[:48]
+    return f"{stem}_{tags.get(operation, operation)}_{safe_model}.{extension}"
 
 
 def create_preview(image: np.ndarray, target: Path, max_side: int = 1024) -> Path:
@@ -252,37 +259,63 @@ def process_job(job_id: str) -> None:
                 raise InterruptedError('Processamento cancelado.')
             source = artifacts[job['artifactId']]
             options = job['options']
-            scale = int(options['scale'])
-            if scale not in (2, 4, 8):
-                raise ValueError('Use ampliação 2×, 4× ou 8×.')
             job.update(status='preparing', phase='preparing')
+            operation = job['operation']
+            total = 1
+            if operation == 'vectorize':
+                result_id = new_id('svg')
+                output_path = ARTIFACTS_DIR / f'{result_id}.svg'
+                model_id = vectorize(Path(source['path']), output_path, options, job)
+                filename = operation_filename(source['filename'], operation, model_id, 'svg')
+                result = {'id': result_id, 'filename': filename, 'mime': 'image/svg+xml', 'width': source['width'], 'height': source['height'], 'hasAlpha': True, 'path': str(output_path), 'previewPath': str(output_path), 'inspectPath': str(output_path), 'webpPath': None, 'parentId': source['id'], 'operation': operation, 'engine': model_id, 'options': options}
+                artifacts[result_id] = result
+                job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': 1, 'totalTiles': 1}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
+                return
+
             raw = np.fromfile(source['path'], dtype=np.uint8)
             image = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
             if image is None:
-                raise ValueError('Não foi possível abrir a imagem.')
+                raise ValueError('Não foi possível abrir a imagem raster. Para continuar após um SVG, volte para uma versão PNG.')
             has_alpha = image.ndim == 3 and image.shape[2] == 4
             height, width = image.shape[:2]
-            detailed = scale == 8 and options.get('detailMode') == 'detailed'
-            model = get_model(options.get('upscaleModel', 'general'), job)
-            job.update(status='processing', phase='inference')
-            source_bgr = extend_transparent_colors(image) if has_alpha else image[:, :, :3]
-            first4, total = upscale_with_fallback(source_bgr, model, job)
-            if detailed:
-                job['phase'] = 'second_pass'
-                second4, total = upscale_with_fallback(first4, model, job)
-                target_size = (width * 8, height * 8)
-                rgb = cv2.resize(second4, target_size, interpolation=cv2.INTER_LANCZOS4)
-                del second4
+            if operation == 'upscale':
+                scale = int(options.get('scale', 4))
+                if scale not in (2, 4, 8):
+                    raise ValueError('Use ampliação 2×, 4× ou 8×.')
+                detailed = scale == 8 and options.get('detailMode') == 'detailed'
+                model = get_model(options.get('upscaleModel', 'general'), job)
+                job.update(status='processing', phase='inference')
+                source_bgr = extend_transparent_colors(image) if has_alpha else image[:, :, :3]
+                first4, total = upscale_with_fallback(source_bgr, model, job)
+                if detailed:
+                    job['phase'] = 'second_pass'
+                    second4, total = upscale_with_fallback(first4, model, job)
+                    target_size = (width * 8, height * 8)
+                    rgb = cv2.resize(second4, target_size, interpolation=cv2.INTER_LANCZOS4)
+                    del second4
+                else:
+                    target_size = (width * scale, height * scale)
+                    rgb = first4 if scale == 4 else cv2.resize(first4, target_size, interpolation=cv2.INTER_LANCZOS4)
+                del first4
+                if has_alpha:
+                    job['phase'] = 'alpha'
+                    alpha = cv2.resize(image[:, :, 3], target_size, interpolation=cv2.INTER_LANCZOS4)
+                    output = np.dstack((rgb, alpha))
+                else:
+                    output = rgb
+                model_id = MODEL_SPECS[options.get('upscaleModel', 'general')]['name']
+                filename = processed_filename(source['filename'], scale, options.get('upscaleModel', 'general'), options.get('detailMode', 'faithful'))
+            elif operation == 'remove-background':
+                output, model_id = remove_background(image, options, job)
+                filename = operation_filename(source['filename'], operation, model_id)
+            elif operation == 'clean':
+                output, model_id = clean_image(image, options, job)
+                filename = operation_filename(source['filename'], operation, model_id)
+            elif operation == 'black-white':
+                output, model_id = black_white(image, options, job)
+                filename = operation_filename(source['filename'], operation, model_id)
             else:
-                target_size = (width * scale, height * scale)
-                rgb = first4 if scale == 4 else cv2.resize(first4, target_size, interpolation=cv2.INTER_LANCZOS4)
-            del first4
-            if has_alpha:
-                job['phase'] = 'alpha'
-                alpha = cv2.resize(image[:, :, 3], target_size, interpolation=cv2.INTER_LANCZOS4)
-                output = np.dstack((rgb, alpha))
-            else:
-                output = rgb
+                raise ValueError('Operação inválida.')
 
             job['phase'] = 'encoding'
             result_id = new_id('img')
@@ -296,10 +329,9 @@ def process_job(job_id: str) -> None:
             inspect_path = ARTIFACTS_DIR / f'{result_id}-inspect.webp'
             create_inspection_preview(output, inspect_path)
             out_height, out_width = output.shape[:2]
-            filename = processed_filename(source['filename'], scale, options.get('upscaleModel', 'general'), options.get('detailMode', 'faithful'))
-            result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id']}
+            result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id'], 'operation': operation, 'engine': model_id, 'options': options}
             artifacts[result_id] = result
-            job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': total, 'totalTiles': total}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': peak, 'modelId': MODEL_SPECS[options.get('upscaleModel', 'general')]['name']})
+            job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': total, 'totalTiles': total}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
     except InterruptedError as exc:
         job.update(status='cancelled', phase='cancelled', error={'code': 'CANCELLED', 'message': str(exc)})
     except Exception as exc:
@@ -372,15 +404,17 @@ def get_artifact(artifact_id: str) -> dict[str, Any]:
 
 @app.post('/api/jobs', status_code=202)
 async def create_job(request: JobRequest) -> dict[str, Any]:
-    if not torch.cuda.is_available():
+    gpu_operations = ('upscale', 'remove-background')
+    if request.operation in gpu_operations and not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada. No Colab, selecione um ambiente T4.')
-    if request.operation != 'upscale' or request.artifactId not in artifacts:
+    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize')
+    if request.operation not in allowed or request.artifactId not in artifacts:
         raise HTTPException(400, 'Imagem ou operação inválida.')
     if any(j['status'] in ('queued', 'preparing', 'processing') for j in jobs.values()):
         raise HTTPException(409, 'Aguarde o trabalho atual terminar.')
     job_id = new_id('job')
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    job = {'id': job_id, 'artifactId': request.artifactId, 'operation': 'upscale', 'options': request.options.model_dump(), 'status': 'queued', 'phase': 'queued', 'progress': None, 'resultArtifactId': None, 'error': None, 'createdAt': now, 'updatedAt': now}
+    job = {'id': job_id, 'artifactId': request.artifactId, 'operation': request.operation, 'options': request.options, 'status': 'queued', 'phase': 'queued', 'progress': None, 'resultArtifactId': None, 'error': None, 'createdAt': now, 'updatedAt': now}
     jobs[job_id] = job
     asyncio.get_running_loop().run_in_executor(executor, process_job, job_id)
     return job
@@ -419,7 +453,7 @@ def preview(artifact_id: str, full: bool = False, inspection: bool = False) -> F
             inspect_file = ARTIFACTS_DIR / f"{artifact_id}-inspect.webp"
             inspect_path = str(create_inspection_preview(image, inspect_file))
             item['inspectPath'] = inspect_path
-        return FileResponse(inspect_path, media_type='image/webp')
+        return FileResponse(inspect_path, media_type='image/svg+xml' if item['mime'] == 'image/svg+xml' else 'image/webp')
     preview_path = item.get('previewPath')
     if not preview_path:
         source = np.fromfile(item['path'], dtype=np.uint8)
@@ -429,7 +463,7 @@ def preview(artifact_id: str, full: bool = False, inspection: bool = False) -> F
         preview_file = ARTIFACTS_DIR / f"{artifact_id}-preview.png"
         preview_path = str(create_preview(image, preview_file))
         item['previewPath'] = preview_path
-    return FileResponse(preview_path, media_type='image/png')
+    return FileResponse(preview_path, media_type='image/svg+xml' if item['mime'] == 'image/svg+xml' else 'image/png')
 
 
 @app.get('/api/artifacts/{artifact_id}/download')
@@ -437,6 +471,10 @@ def download_artifact(artifact_id: str, format: str = 'png', background: str = '
     item = artifacts.get(artifact_id)
     if not item:
         raise HTTPException(404, 'Imagem não encontrada.')
+    if item['mime'] == 'image/svg+xml':
+        if format != 'svg':
+            raise HTTPException(400, 'Esta versão é vetorial. Baixe no formato SVG.')
+        return FileResponse(item['path'], media_type='image/svg+xml', filename=item['filename'])
     if format == 'png':
         if item['mime'] == 'image/png':
             return FileResponse(item['path'], media_type='image/png', filename=item['filename'])

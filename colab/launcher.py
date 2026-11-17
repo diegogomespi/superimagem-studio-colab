@@ -127,10 +127,13 @@ def run_from_colab(
         _run(
             [sys.executable, "-m", "pip", "install", "-q", "-r", str(repo / "colab" / "requirements-colab.txt")],
             "Instalando dependências",
-            "Preparando o motor de ampliação...",
+            "Preparando ampliação, recorte e vetorização...",
             55,
             project_dir,
         )
+        if shutil.which("potrace") is None:
+            _run(["apt-get", "update", "-qq"], "Instalando vetorizador", "Atualizando a lista de pacotes...", 60)
+            _run(["apt-get", "install", "-y", "-qq", "potrace"], "Instalando vetorizador", "Instalando Potrace para preto e branco...", 65)
 
         _update("Carregando aplicação", "Iniciando o servidor da página externa...", 78)
         subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)

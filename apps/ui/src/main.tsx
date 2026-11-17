@@ -1,0 +1,272 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { ArtifactInfo, JobRecord } from '../../../packages/contracts/src/index.ts';
+import './styles.css';
+import './gpu-upscale.css';
+
+type Scale = 2 | 4 | 8;
+type UpscaleModel = 'general' | 'illustration';
+type DetailMode = 'faithful' | 'detailed';
+type Operation = 'upscale' | 'remove-background' | 'clean' | 'black-white' | 'vectorize';
+type View = 'original' | 'result' | 'compare';
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg';
+const terminal = new Set(['done', 'cancelled', 'error', 'interrupted']);
+const icons = { upscale: '↗', upload: '↑', zoomOut: '−', zoomIn: '+' };
+
+function App() {
+  // O proxy do Colab publica a aplicação em /proxy/<porta>/. Usar caminhos
+  // absolutos (/api/...) ignora esse prefixo e causa HTTP 404 na página externa.
+  const apiBase = useRef(new URL(location.pathname.endsWith('/') ? location.pathname : `${location.pathname}/`, location.origin));
+  const [token] = useState(() => {
+    const value = new URLSearchParams(location.hash.slice(1)).get('token') ?? sessionStorage.getItem('superimagem-token') ?? '';
+    if (value) sessionStorage.setItem('superimagem-token', value);
+    history.replaceState(null, '', location.pathname);
+    return value;
+  });
+  const api = async (url: string, init: RequestInit = {}) => {
+    const endpoint = new URL(url.replace(/^\//, ''), apiBase.current);
+    const response = await fetch(endpoint, { ...init, headers: { ...(init.headers ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const detail = typeof body.error === 'string' ? body.error : typeof body.detail === 'string' ? body.detail : response.statusText;
+      throw new Error(`HTTP ${response.status}: ${detail || 'Falha na comunicação com o servidor'}`);
+    }
+    return response;
+  };
+
+  const [artifact, setArtifact] = useState<ArtifactInfo | null>(null);
+  const [original, setOriginal] = useState<ArtifactInfo | null>(null);
+  const [versions, setVersions] = useState<ArtifactInfo[]>([]);
+  const [operationSource, setOperationSource] = useState<ArtifactInfo | null>(null);
+  const [beforeUrl, setBeforeUrl] = useState('');
+  const [afterUrl, setAfterUrl] = useState('');
+  const [beforeInspectUrl, setBeforeInspectUrl] = useState('');
+  const [afterInspectUrl, setAfterInspectUrl] = useState('');
+  const [job, setJob] = useState<JobRecord | null>(null);
+  const [error, setError] = useState('');
+  const [scale, setScale] = useState<Scale>(4);
+  const [model, setModel] = useState<UpscaleModel>('general');
+  const [detailMode, setDetailMode] = useState<DetailMode>('faithful');
+  const [operation, setOperation] = useState<Operation>('upscale');
+  const [backgroundEngine, setBackgroundEngine] = useState<'birefnet-hr' | 'ben2'>('birefnet-hr');
+  const [refineEdges, setRefineEdges] = useState(true);
+  const [cleanStyle, setCleanStyle] = useState<'illustration' | 'photo'>('illustration');
+  const [cleanStrength, setCleanStrength] = useState(35);
+  const [thresholdMode, setThresholdMode] = useState<'adaptive' | 'otsu' | 'manual'>('adaptive');
+  const [threshold, setThreshold] = useState(128);
+  const [vectorMode, setVectorMode] = useState<'color' | 'bw'>('color');
+  const [maxColors, setMaxColors] = useState(16);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
+  const [view, setView] = useState<View>('original');
+  const [viewBg, setViewBg] = useState<'checker' | 'white' | 'black'>('checker');
+  const [zoom, setZoom] = useState(100);
+  const [fit, setFit] = useState(true);
+  const [compare, setCompare] = useState(50);
+  const [gpuLabel, setGpuLabel] = useState('VERIFICANDO');
+  const [buildVersion, setBuildVersion] = useState('');
+  const [drag, setDrag] = useState(false);
+  const [panning, setPanning] = useState(false);
+  const [slidingCompare, setSlidingCompare] = useState(false);
+  const [panModifier, setPanModifier] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const panStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
+  const [canvasSize, setCanvasSize] = useState({ width: 900, height: 700 });
+
+  const running = submitting || Boolean(job && !terminal.has(job.status));
+  const resultWidth = artifact ? artifact.width * (operation === 'upscale' ? scale : 1) : 1;
+  const resultHeight = artifact ? artifact.height * (operation === 'upscale' ? scale : 1) : 1;
+  const beforeArtifact = operationSource ?? artifact;
+  const referenceWidth = view === 'original' || !afterUrl ? beforeArtifact?.width ?? 1 : artifact?.width ?? 1;
+  const referenceHeight = view === 'original' || !afterUrl ? beforeArtifact?.height ?? 1 : artifact?.height ?? 1;
+  const previewRatio = Math.min(1, 1024 / Math.max(referenceWidth, referenceHeight));
+  const previewWidth = referenceWidth * previewRatio;
+  const previewHeight = referenceHeight * previewRatio;
+  const fitScale = Math.min(Math.max(1, canvasSize.width - 32) / previewWidth, Math.max(1, canvasSize.height - 32) / previewHeight);
+  const stageWidth = Math.max(1, previewWidth * (fit ? fitScale : zoom / 100));
+  const outputDimensions = artifact ? `${resultWidth} × ${resultHeight}px` : '—';
+  const progress = job?.status === 'done' ? 100 : job?.progress?.totalTiles ? Math.min(100, Math.round(((job.progress.completedTiles ?? 0) / job.progress.totalTiles) * 100)) : null;
+  const squares = 24;
+  const completedSquares = progress === null ? 0 : Math.round(progress * squares / 100);
+
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => setCanvasSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+    const wheelZoom = (event: WheelEvent) => {
+      if (!beforeUrl) return;
+      event.preventDefault();
+      const stage = element.querySelector<HTMLElement>('.image-stage');
+      if (!stage) return;
+      const rect = stage.getBoundingClientRect();
+      const anchorX = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
+      const anchorY = Math.max(0, Math.min(1, (event.clientY - rect.top) / Math.max(1, rect.height)));
+      const currentZoom = fit ? fitScale * 100 : zoom;
+      const nextZoom = Math.max(25, Math.min(400, currentZoom + (event.deltaY < 0 ? 25 : -25)));
+      setFit(false);
+      setZoom(nextZoom);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const nextRect = stage.getBoundingClientRect();
+        element.scrollLeft += nextRect.left + anchorX * nextRect.width - event.clientX;
+        element.scrollTop += nextRect.top + anchorY * nextRect.height - event.clientY;
+      }));
+    };
+    element.addEventListener('wheel', wheelZoom, { passive: false });
+    return () => element.removeEventListener('wheel', wheelZoom);
+  }, [Boolean(beforeUrl), fit, fitScale, zoom]);
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Control') setPanModifier(true); };
+    const keyUp = (event: KeyboardEvent) => { if (event.key === 'Control') setPanModifier(false); };
+    const clear = () => setPanModifier(false);
+    window.addEventListener('keydown', keyDown); window.addEventListener('keyup', keyUp); window.addEventListener('blur', clear);
+    return () => { window.removeEventListener('keydown', keyDown); window.removeEventListener('keyup', keyUp); window.removeEventListener('blur', clear); };
+  }, []);
+  useEffect(() => {
+    api('/api/health').then(r => r.json()).then(data => { setGpuLabel(data.gpu?.name ? `GPU · ${data.gpu.name}` : data.engine === 'cuda' ? 'GPU CUDA' : 'CPU LOCAL'); setBuildVersion(data.version ?? ''); }).catch(() => setGpuLabel('DESCONECTADO'));
+  }, []);
+
+  const revoke = (url: string) => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
+  const loadPreviewImage = async (id: string, inspection = false) => URL.createObjectURL(await (await api(`/api/artifacts/${id}/preview${inspection ? '?inspection=1' : ''}`)).blob());
+  const upload = async (file?: File) => {
+    if (!file) return;
+    setError(''); const body = new FormData(); body.append('file', file);
+    try {
+      const item: ArtifactInfo = await (await api('/api/artifacts', { method: 'POST', body })).json();
+      const url = await loadPreviewImage(item.id);
+      revoke(beforeUrl); revoke(afterUrl); revoke(beforeInspectUrl); revoke(afterInspectUrl);
+      setArtifact(item); setOriginal(item); setVersions([item]); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const execute = async () => {
+    if (!artifact || submitLock.current || (job && !terminal.has(job.status))) return;
+    submitLock.current = true; setSubmitting(true);
+    setError(''); setJob(null); setOperationSource(artifact); revoke(afterUrl); revoke(afterInspectUrl); setAfterUrl(''); setAfterInspectUrl(''); setView('original');
+    try {
+      const sourcePreview = await loadPreviewImage(artifact.id);
+      revoke(beforeUrl); setBeforeUrl(sourcePreview); revoke(beforeInspectUrl); setBeforeInspectUrl('');
+      const options = operation === 'upscale' ? { scale, upscaleModel: model, detailMode }
+        : operation === 'remove-background' ? { backgroundEngine, refineEdges }
+        : operation === 'clean' ? { cleanStyle, cleanStrength, cleanAlpha: true, autoContrast: true }
+        : operation === 'black-white' ? { thresholdMode, threshold, adaptiveBlock: 31, adaptiveC: 7, speckle: 2 }
+        : { vectorMode, vectorEngine: vectorMode === 'bw' ? 'potrace' : 'vtracer', maxColors, adaptive: true, curveMode: 'spline' };
+      const value = await (await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artifactId: artifact.id, operation, options }) })).json();
+      setJob(value);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { submitLock.current = false; setSubmitting(false); }
+  };
+  useEffect(() => {
+    if (!job || terminal.has(job.status)) return;
+    const timer = setInterval(async () => {
+      try {
+        const next: JobRecord = await (await api(`/api/jobs/${job.id}`)).json(); setJob(next);
+        if (terminal.has(next.status)) setError('');
+        if (next.status === 'done' && next.resultArtifactId) {
+          const result: ArtifactInfo = await (await api(`/api/artifacts/${next.resultArtifactId}`)).json();
+          const url = await loadPreviewImage(next.resultArtifactId); revoke(afterUrl); setAfterUrl(url); setArtifact(result); setVersions(current => current.some(item => item.id === result.id) ? current : [...current, result]); setView('result'); setFit(true);
+          const sourceId = next.artifactId;
+          if (sourceId) Promise.all([loadPreviewImage(sourceId, true), loadPreviewImage(next.resultArtifactId, true)]).then(([sourceInspect, resultInspect]) => {
+            revoke(beforeInspectUrl); revoke(afterInspectUrl); setBeforeInspectUrl(sourceInspect); setAfterInspectUrl(resultInspect);
+          }).catch(() => { /* o preview leve continua disponível */ });
+        }
+      } catch { /* tenta novamente */ }
+    }, 500);
+    return () => clearInterval(timer);
+  }, [job?.id, job?.status]);
+  const download = async () => {
+    if (!artifact) return;
+    const format = artifact.mime === 'image/svg+xml' ? 'svg' : exportFormat;
+    const originalName = artifact.filename.replace(/\.[^.]+$/, '').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 180) || 'imagem';
+    const extension = format === 'jpeg' ? 'jpg' : format;
+    const filename = `${originalName}.${extension}`;
+    const endpoint = new URL(`/api/artifacts/${artifact.id}/download?format=${format}&background=%23ffffff`.replace(/^\//, ''), apiBase.current);
+    const a = document.createElement('a');
+    if (token) {
+      const blob = await (await api(endpoint.pathname + endpoint.search)).blob();
+      a.href = URL.createObjectURL(blob); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    } else {
+      a.href = endpoint.toString(); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    }
+  };
+  const selectVersion = async (item: ArtifactInfo) => {
+    const url = await loadPreviewImage(item.id);
+    revoke(beforeUrl); revoke(afterUrl); revoke(beforeInspectUrl); revoke(afterInspectUrl);
+    setArtifact(item); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
+  };
+  const undo = () => {
+    if (!artifact?.parentId) return;
+    const parent = versions.find(item => item.id === artifact.parentId);
+    if (parent) void selectVersion(parent);
+  };
+  const reset = () => { if (original) void selectVersion(original); };
+  const changeZoom = (next: number) => { setFit(false); setZoom(Math.max(25, Math.min(400, next))); };
+  const fitWidth = () => changeZoom(Math.round(((canvasSize.width - 32) / Math.max(1, previewWidth)) * 100));
+  const startPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (fit || !beforeUrl || (view === 'compare' && !panModifier) || ((event.target as HTMLElement).closest('.divider') && !panModifier)) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    panStart.current = { x: event.clientX, y: event.clientY, left: canvas.scrollLeft, top: canvas.scrollTop };
+    setPanning(true); event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!panning || !canvasRef.current) return;
+    canvasRef.current.scrollLeft = panStart.current.left - (event.clientX - panStart.current.x);
+    canvasRef.current.scrollTop = panStart.current.top - (event.clientY - panStart.current.y);
+  };
+  const stopPan = (event: React.PointerEvent<HTMLDivElement>) => { if (panning) { setPanning(false); event.currentTarget.releasePointerCapture(event.pointerId); } };
+  const updateCompare = (clientX: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCompare(Math.max(0, Math.min(100, ((clientX - rect.left) / Math.max(1, rect.width)) * 100)));
+  };
+  const startCompare = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (panModifier) return;
+    event.stopPropagation(); setSlidingCompare(true); event.currentTarget.setPointerCapture(event.pointerId); updateCompare(event.clientX);
+  };
+  const moveCompare = (event: React.PointerEvent<HTMLDivElement>) => { if (slidingCompare) updateCompare(event.clientX); };
+  const stopCompare = (event: React.PointerEvent<HTMLDivElement>) => { if (slidingCompare) { setSlidingCompare(false); event.currentTarget.releasePointerCapture(event.pointerId); } };
+  const phaseLabel: Record<string, string> = { queued: 'Na fila', preparing: 'Preparando imagem', loading_model: 'Carregando modelo na GPU', loading_background_model: 'Baixando/carregando recortador', background_inference: 'Recortando fundo na GPU', cleaning: 'Limpando imagem', black_white: 'Preparando preto e branco', vectorizing: 'Gerando curvas vetoriais', inference: 'Ampliando em blocos', reducing_tile: 'Ajustando memória da GPU', alpha: 'Preservando transparência', second_pass: 'Segunda etapa de detalhes', encoding: 'Validando e salvando resultado', cancelling: 'Cancelando', cancelled: 'Cancelado', done: 'Concluído', error: 'Falha' };
+  const viewerLabel = fit ? 'AJUSTAR' : `${zoom}% PREVIEW`;
+  const beforeDisplayUrl = beforeInspectUrl || beforeUrl;
+  const afterDisplayUrl = afterInspectUrl || afterUrl;
+  const inspectionReady = Boolean(beforeInspectUrl && afterInspectUrl);
+
+  const operationNames: Record<Operation, string> = { upscale: 'Ampliar', 'remove-background': 'Remover fundo', clean: 'Limpar', 'black-white': 'Preto e branco', vectorize: 'Vetorizar' };
+  return <div className="app-shell upscale-only">
+    <aside className="rail"><div className="brand-mark">S</div><strong className="brand-name">SUPERIMAGEM</strong><span className="brand-subtitle">Studio profissional com GPU T4</span><nav>{(['upscale', 'remove-background', 'clean', 'black-white', 'vectorize'] as Operation[]).map((tool, index) => <button key={tool} className={operation === tool ? 'active' : ''} title={operationNames[tool]} onClick={() => setOperation(tool)}><span>{['↗', '✂', '✦', '◐', '◇'][index]}</span><small>{operationNames[tool]}</small></button>)}</nav></aside>
+    <section className="side-panel">
+      <header><div><p>SUPERIMAGEM STUDIO</p><h1>{operationNames[operation]}</h1></div><span className={`local-badge ${gpuLabel === 'DESCONECTADO' ? 'offline' : ''}`}>● {gpuLabel}</span></header>
+      <div className="field"><label>IMAGEM</label><button className="file-button" onClick={() => fileInput.current?.click()}>{icons.upload} {artifact ? artifact.filename : 'Escolher imagem'}</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => upload(e.target.files?.[0])}/>{artifact && <small>{artifact.width} × {artifact.height}px · {artifact.hasAlpha ? 'transparência será preservada' : 'imagem opaca'}</small>}</div>
+      {operation === 'upscale' && <><div className="field"><label>NÍVEL DE AUMENTO</label><div className="scale-grid three"><button className={scale === 2 ? 'selected' : ''} onClick={() => setScale(2)}><b>2×</b><small>4× pixels</small></button><button className={scale === 4 ? 'selected' : ''} onClick={() => setScale(4)}><b>4×</b><small>16× pixels</small></button><button className={scale === 8 ? 'selected' : ''} onClick={() => setScale(8)}><b>8×</b><small>64× pixels</small></button></div></div><div className="field"><label>TIPO DE IMAGEM</label><div className="segmented"><button className={model === 'general' ? 'selected' : ''} onClick={() => setModel('general')}>Foto / geral</button><button className={model === 'illustration' ? 'selected' : ''} onClick={() => setModel('illustration')}>Ilustração / estampa</button></div><small>{model === 'general' ? 'RealESRGAN x4plus oficial para fotos e uso geral.' : 'RealESRGAN Anime 6B para traços, estampas e cores chapadas.'}</small></div>{scale === 8 && <div className="field"><label>MODO 8×</label><div className="segmented"><button className={detailMode === 'faithful' ? 'selected' : ''} onClick={() => setDetailMode('faithful')}>Fiel</button><button className={detailMode === 'detailed' ? 'selected' : ''} onClick={() => setDetailMode('detailed')}>Detalhado</button></div></div>}</>}
+      {operation === 'remove-background' && <div className="field"><label>MOTOR DE RECORTE</label><div className="segmented"><button className={backgroundEngine === 'birefnet-hr' ? 'selected' : ''} onClick={() => setBackgroundEngine('birefnet-hr')}>BiRefNet HR</button><button className={backgroundEngine === 'ben2' ? 'selected' : ''} onClick={() => setBackgroundEngine('ben2')}>BEN2</button></div><small>{backgroundEngine === 'birefnet-hr' ? 'Principal: transparência e bordas em alta resolução.' : 'Alternativa forte para objetos, cabelo e recorte refinado.'}</small><label className="check-row"><input type="checkbox" checked={refineEdges} onChange={e => setRefineEdges(e.target.checked)}/> Refinar bordas e cabelo</label></div>}
+      {operation === 'clean' && <div className="field"><label>TIPO DE LIMPEZA</label><div className="segmented"><button className={cleanStyle === 'illustration' ? 'selected' : ''} onClick={() => setCleanStyle('illustration')}>Ilustração</button><button className={cleanStyle === 'photo' ? 'selected' : ''} onClick={() => setCleanStyle('photo')}>Foto</button></div><label>FORÇA · {cleanStrength}%</label><input type="range" min="0" max="100" value={cleanStrength} onChange={e => setCleanStrength(+e.target.value)}/><small>Remove ruído, limpa pixels transparentes e aplica contraste conservador.</small></div>}
+      {operation === 'black-white' && <div className="field"><label>CONVERSÃO</label><div className="segmented"><button className={thresholdMode === 'adaptive' ? 'selected' : ''} onClick={() => setThresholdMode('adaptive')}>Adaptativo</button><button className={thresholdMode === 'otsu' ? 'selected' : ''} onClick={() => setThresholdMode('otsu')}>Otsu</button><button className={thresholdMode === 'manual' ? 'selected' : ''} onClick={() => setThresholdMode('manual')}>Manual</button></div>{thresholdMode === 'manual' && <><label>LIMIAR · {threshold}</label><input type="range" min="0" max="255" value={threshold} onChange={e => setThreshold(+e.target.value)}/></>}<small>Prepara arte limpa para silk, estampa e vetorização.</small></div>}
+      {operation === 'vectorize' && <div className="field"><label>TIPO DE VETOR</label><div className="segmented"><button className={vectorMode === 'color' ? 'selected' : ''} onClick={() => setVectorMode('color')}>Colorido</button><button className={vectorMode === 'bw' ? 'selected' : ''} onClick={() => setVectorMode('bw')}>Preto e branco</button></div>{vectorMode === 'color' && <><label>MÁXIMO DE CORES · {maxColors}</label><input type="range" min="2" max="64" value={maxColors} onChange={e => setMaxColors(+e.target.value)}/></>}<small>{vectorMode === 'color' ? 'VTracer com curvas spline e recorte sem emendas.' : 'Potrace dedicado a formas monocromáticas limpas.'}</small></div>}
+      <div className="field active-version"><label>VERSÃO ATIVA</label><div className="version-current"><span>{versions.findIndex(item => item.id === artifact?.id) + 1 || 0}</span><div><strong>{artifact?.filename ?? 'Nenhuma imagem'}</strong><small>{artifact ? `${artifact.width} × ${artifact.height}px` : 'Escolha uma imagem'}</small></div></div>{versions.length > 1 && <div className="version-history">{versions.map((item, index) => <button key={item.id} className={item.id === artifact?.id ? 'selected' : ''} onClick={() => void selectVersion(item)} title={item.filename}>{index === 0 ? 'Original' : `V${index + 1}`}</button>)}</div>}<div className="version-actions"><button disabled={!artifact?.parentId} onClick={undo}>↶ Voltar uma etapa</button><button disabled={!original || artifact?.id === original.id} onClick={reset}>Restaurar original</button></div></div>
+      <div className="field output-summary"><p className="dimension">Próxima saída: <strong>{outputDimensions}</strong></p><small>A operação sempre usa a versão ativa. Você pode voltar ou escolher qualquer versão.</small></div>
+      <div className="field format-field"><label>BAIXAR VERSÃO ATIVA</label>{artifact?.mime === 'image/svg+xml' ? <div className="format-switch"><button className="selected">SVG</button></div> : <div className="format-switch"><button className={exportFormat === 'png' ? 'selected' : ''} onClick={() => setExportFormat('png')}>PNG</button><button className={exportFormat === 'jpeg' ? 'selected' : ''} onClick={() => setExportFormat('jpeg')}>JPEG</button><button className={exportFormat === 'webp' ? 'selected' : ''} disabled={Boolean(artifact && Math.max(artifact.width, artifact.height) > 16383)} onClick={() => setExportFormat('webp')}>WebP</button></div>}<small>{artifact?.mime === 'image/svg+xml' ? 'Vetor editável e escalável sem perda.' : exportFormat === 'png' ? 'Sem perdas e com transparência preservada.' : exportFormat === 'jpeg' ? 'Arquivo compacto com fundo branco e qualidade 95.' : 'Arquivo compacto Q95, preservando transparência.'}</small></div>
+      <div className="panel-spacer"/>
+      {error && <div className="error">{error}</div>}{job?.error && <div className="error">{job.error.message}</div>}
+      {job && <details className="job-state" open={running || undefined}><summary><span>{phaseLabel[job.phase] ?? job.phase}</span><b>{progress === null ? '•••' : `${progress}%`}</b></summary><div className="tile-progress" aria-label={`Progresso ${progress ?? 0}%`}>{Array.from({ length: squares }, (_, i) => <i key={i} className={i < completedSquares ? 'done' : ''}/>)}</div>{job.metrics && <small>{(job.metrics.durationMs / 1000).toFixed(1)}s · pico {(job.metrics.peakRssBytes / 1073741824).toFixed(1)} GB</small>}</details>}
+      <div className="actions">{running ? <button className="danger" onClick={() => api(`/api/jobs/${job!.id}/cancel`, { method: 'POST' })}>Cancelar processamento</button> : <><button className="primary" disabled={!artifact || artifact.mime === 'image/svg+xml'} onClick={execute}>{operationNames[operation]} versão ativa{operation === 'upscale' || operation === 'remove-background' ? ' na GPU' : ''}</button>{artifact && <button className="download-png" onClick={download}>↓ Baixar versão ativa · {artifact.mime === 'image/svg+xml' ? 'SVG' : exportFormat === 'jpeg' ? 'JPEG' : exportFormat.toUpperCase()}</button>}</>}</div>
+    </section>
+    <main className="workspace">
+      <div className="workspace-toolbar"><div className="view-switch"><button className={view === 'original' ? 'selected' : ''} onClick={() => setView('original')}>{afterUrl ? 'Antes' : 'Versão ativa'}</button><button className={view === 'result' ? 'selected' : ''} disabled={!afterUrl} onClick={() => setView('result')}>Resultado</button><button className={view === 'compare' ? 'selected' : ''} disabled={!afterUrl} onClick={() => setView('compare')}>Comparar</button></div><div className="resolution-badge">{view === 'original' || !afterUrl ? `${beforeArtifact?.width ?? 0} × ${beforeArtifact?.height ?? 0}` : `${artifact?.width ?? 0} × ${artifact?.height ?? 0}`}</div><div className="background-switch"><button className={viewBg === 'checker' ? 'selected' : ''} onClick={() => setViewBg('checker')} title="Transparência">▦</button><button className={viewBg === 'white' ? 'selected' : ''} onClick={() => setViewBg('white')}>Branco</button><button className={viewBg === 'black' ? 'selected' : ''} onClick={() => setViewBg('black')}>Preto</button></div></div>
+      <div className="viewer-controls"><button onClick={() => changeZoom(zoom - 25)}>{icons.zoomOut}</button><strong>{fit ? 'Ajustado' : `${zoom / 100}×`}</strong><button onClick={() => changeZoom(zoom + 25)}>{icons.zoomIn}</button><button onClick={() => setFit(true)}>Ajustar</button><button onClick={fitWidth}>Ajustar largura</button><span>{panModifier ? 'MÃO ATIVA · arraste para mover' : view === 'compare' ? 'Arraste a linha · Ctrl: mover imagem' : 'Roda: zoom · arraste: mover'}</span></div>
+      <div ref={canvasRef} className={`canvas ${viewBg} ${!fit && (view !== 'compare' || panModifier) ? 'pannable' : ''} ${panModifier ? 'pan-modifier' : ''} ${panning ? 'panning' : ''}`} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={stopPan} onPointerCancel={stopPan} onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files[0]); }}>
+        {!beforeUrl ? <button className={`dropzone ${drag ? 'drag' : ''}`} onClick={() => fileInput.current?.click()}><span>{icons.upload}</span><strong>Escolha ou arraste uma imagem</strong><small>PNG, JPEG ou WebP · transparência preservada</small></button> : <div ref={stageRef} className="image-stage" style={{ width: stageWidth, flexShrink: 0 }}><img draggable={false} src={afterUrl && view === 'result' ? afterDisplayUrl : beforeDisplayUrl} style={{ clipPath: afterUrl && view === 'compare' ? `inset(0 ${100 - compare}% 0 0)` : undefined }} alt={view === 'original' ? 'Versão usada como entrada' : 'Resultado processado'}/>{afterUrl && view === 'compare' && <div className="after-layer" style={{ clipPath: `inset(0 0 0 ${compare}%)` }}><img draggable={false} src={afterDisplayUrl} alt="Resultado processado"/></div>}{afterUrl && view === 'compare' && <><input className="compare-slider" aria-label="Comparação antes e depois" type="range" min="0" max="100" value={compare} onChange={e => setCompare(+e.target.value)}/><div className="divider" role="separator" aria-label="Mover divisor da comparação" aria-valuenow={Math.round(compare)} style={{ left: `${compare}%` }} onPointerDown={startCompare} onPointerMove={moveCompare} onPointerUp={stopCompare} onPointerCancel={stopCompare}><span className="compare-handle">‹ ›</span></div><span className="before-label">ENTRADA</span><span className="after-label">{operationNames[operation].toUpperCase()}</span></>}</div>}
+      </div>
+      <footer><span>{inspectionReady ? 'Comparação HD ativa · original e IA em resoluções diferentes reais.' : fit ? 'Preview leve ajustado à tela. O download mantém a resolução completa.' : 'Carregando detalhe para inspeção; o arquivo baixado permanece completo.'}</span><span>{running ? 'GPU processando' : `${gpuLabel}${buildVersion ? ` · v${buildVersion}` : ''} · 1 trabalho por vez`}</span></footer>
+    </main>
+  </div>;
+}
+
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

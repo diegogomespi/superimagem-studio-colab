@@ -2,3 +2,5 @@ colab/models/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+node_modules/
+.validation-env/

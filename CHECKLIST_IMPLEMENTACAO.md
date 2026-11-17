@@ -10,8 +10,8 @@ Este documento controla o desenvolvimento do sistema completo. Marcar um item co
 - [x] Preservar a imagem original sem alterações.
 - [x] Criar uma nova versão para cada operação.
 - [x] Permitir baixar a versão ativa em qualquer etapa.
-- [ ] Permitir ramificações: escolher uma versão antiga e criar um novo caminho a partir dela.
-- [ ] Exibir claramente qual versão será usada como entrada antes de iniciar um trabalho.
+- [x] Permitir ramificações: escolher uma versão antiga e criar um novo caminho a partir dela.
+- [x] Exibir claramente qual versão será usada como entrada antes de iniciar um trabalho.
 - [ ] Confirmar operações que descartem versões ou reiniciem o trabalho.
 
 Fluxos igualmente válidos:
@@ -60,19 +60,19 @@ Fluxos igualmente válidos:
 
 ## 4. Interface modular
 
-- [ ] Criar barra de ferramentas compacta no topo ou na lateral.
-- [ ] Aba `Ampliar`.
-- [ ] Aba `Remover fundo`.
-- [ ] Aba `Limpar`.
-- [ ] Aba `Vetorizar`.
+- [x] Criar barra de ferramentas compacta no topo ou na lateral.
+- [x] Aba `Ampliar`.
+- [x] Aba `Remover fundo`.
+- [x] Aba `Limpar`.
+- [x] Aba `Vetorizar`.
 - [ ] Aba `Histórico`.
-- [ ] Trocar apenas o painel de controles; manter a imagem no mesmo visualizador.
-- [ ] Destacar a ferramenta aberta sem transformar o sistema em uma sequência.
-- [ ] Manter todos os controles essenciais dentro da altura da tela em desktop.
+- [x] Trocar apenas o painel de controles; manter a imagem no mesmo visualizador.
+- [x] Destacar a ferramenta aberta sem transformar o sistema em uma sequência.
+- [x] Manter todos os controles essenciais dentro da altura da tela em desktop.
 - [ ] Layout responsivo de uma coluna em telas estreitas.
-- [ ] Estado vazio simples para upload por clique ou arrastar.
+- [x] Estado vazio simples para upload por clique ou arrastar.
 - [ ] Desabilitar somente os controles incompatíveis, explicando o motivo.
-- [ ] Mostrar progresso, etapa atual, porcentagem e botão Cancelar.
+- [x] Mostrar progresso, etapa atual, porcentagem e botão Cancelar.
 - [ ] Mostrar erros em português com causa provável e ação recomendada.
 
 ## 5. Visualizador e comparador
@@ -84,10 +84,10 @@ Fluxos igualmente válidos:
 - [x] Arrastar imagem ampliada.
 - [x] Comparador com divisor vertical arrastável pela linha inteira.
 - [x] `Ctrl` ativa a mão no modo Comparar.
-- [ ] Comparar sempre a entrada usada pela operação com seu resultado direto.
+- [x] Comparar sempre a entrada usada pela operação com seu resultado direto.
 - [ ] Preservar zoom e posição ao alternar Antes, Resultado e Comparar.
 - [ ] Sincronizar exatamente enquadramento e coordenadas dos dois lados.
-- [ ] Fundos de visualização quadriculado, branco e preto sem alterar o arquivo.
+- [x] Fundos de visualização quadriculado, branco e preto sem alterar o arquivo.
 - [ ] Identificar no comparador o motor e a operação de cada lado.
 - [ ] Permitir selecionar manualmente quaisquer duas versões para comparar.
 - [ ] Testar imagens verticais, horizontais, quadradas e muito grandes.
@@ -113,10 +113,10 @@ Fluxos igualmente válidos:
 
 ## 7. Remoção automática de fundo
 
-- [ ] Integrar BiRefNet HR-Matting oficial com CUDA.
-- [ ] Integrar BEN2 disponível para teste pessoal.
+- [x] Integrar BiRefNet HR-Matting oficial com CUDA.
+- [x] Integrar BEN2 disponível para teste pessoal.
 - [ ] Baixar, validar e registrar os pesos de cada motor.
-- [ ] Carregar modelos pesados somente quando a ferramenta for usada.
+- [x] Carregar modelos pesados somente quando a ferramenta for usada.
 - [ ] Executar comparação A/B com as mesmas imagens.
 - [ ] Escolher o motor padrão por resultado real, não por propaganda.
 - [ ] Criar opção `Automático HQ`.
@@ -124,7 +124,7 @@ Fluxos igualmente válidos:
 - [ ] Preservar cabelos, pelos, dedos, objetos finos e furos internos.
 - [ ] Preservar transparência parcial em véu, renda, fumaça e vidro quando possível.
 - [ ] Não apagar partes legítimas de cor semelhante ao fundo.
-- [ ] Gerar PNG RGBA sem criar fundo branco.
+- [x] Gerar PNG RGBA sem criar fundo branco.
 - [ ] Mostrar a máscara/alpha para inspeção opcional.
 - [ ] Testar retrato, corpo inteiro, duas pessoas, produtos, estampas e ilustrações.
 
@@ -145,61 +145,61 @@ Fluxos igualmente válidos:
 
 ## 9. Limpar e preparar imagem
 
-- [ ] Ferramenta funcionar de forma independente, sem exigir vetorização.
-- [ ] Remover ruído e granulação preservando bordas.
+- [x] Ferramenta funcionar de forma independente, sem exigir vetorização.
+- [x] Remover ruído e granulação preservando bordas.
 - [ ] Reduzir artefatos de compressão JPEG.
 - [ ] Limpar pontos coloridos isolados.
 - [ ] Suavizar degradês sem criar faixas fortes.
-- [ ] Limpar canal alpha e pixels quase transparentes indesejados.
+- [x] Limpar canal alpha e pixels quase transparentes indesejados.
 - [ ] Remover halos na transparência.
 - [ ] Opções `Foto`, `Ilustração` e `Preparar para vetor`.
 - [ ] Intensidades `Leve`, `Equilibrada` e `Forte`.
 - [ ] Preview antes/depois sem aplicar automaticamente.
-- [ ] Permitir baixar o raster limpo em PNG ou WebP.
-- [ ] Preservar cores e transparência quando a preparação P&B não estiver ativada.
+- [x] Permitir baixar o raster limpo em PNG ou WebP.
+- [x] Preservar cores e transparência quando a preparação P&B não estiver ativada.
 
 ## 10. Preparação preto e branco
 
-- [ ] Botão `Transformar em preto e branco` independente da vetorização.
-- [ ] Conversão correta para tons de cinza antes do limiar.
+- [x] Botão `Transformar em preto e branco` independente da vetorização.
+- [x] Conversão correta para tons de cinza antes do limiar.
 - [ ] Ajuste automático de níveis e contraste.
-- [ ] Limiar automático por Otsu.
-- [ ] Limiar adaptativo para iluminação irregular.
-- [ ] Controle manual do limite preto/branco.
+- [x] Limiar automático por Otsu.
+- [x] Limiar adaptativo para iluminação irregular.
+- [x] Controle manual do limite preto/branco.
 - [ ] Fundo branco no modo de preparação binária.
 - [ ] Opção Inverter.
 - [ ] Engrossar linhas.
 - [ ] Afinar linhas.
-- [ ] Remover pontos pequenos.
+- [x] Remover pontos pequenos.
 - [ ] Preencher falhas pequenas.
 - [ ] Preservar cantos e letras.
-- [ ] Mostrar resultado P&B antes de vetorizar.
-- [ ] Permitir baixar somente o PNG P&B preparado.
+- [x] Mostrar resultado P&B antes de vetorizar.
+- [x] Permitir baixar somente o PNG P&B preparado.
 
 ## 11. Vetorização preto e branco
 
-- [ ] Integrar VTracer no modo binário/adaptativo.
-- [ ] Integrar Potrace para comparação clássica de curvas.
-- [ ] Usar como entrada a versão ativa ou a versão P&B recém-preparada.
+- [x] Integrar VTracer no modo binário/adaptativo.
+- [x] Integrar Potrace para comparação clássica de curvas.
+- [x] Usar como entrada a versão ativa ou a versão P&B recém-preparada.
 - [ ] Comparar fidelidade, quantidade de nós e tamanho do arquivo.
 - [ ] Selecionar automaticamente o melhor preset inicial.
 - [ ] Controles de suavidade, cantos e remoção de manchas.
-- [ ] Preview SVG real, sem incorporar o bitmap dentro do arquivo.
+- [x] Preview SVG real, sem incorporar o bitmap dentro do arquivo.
 - [ ] Verificar abertura e edição no CorelDRAW.
-- [ ] Exportar SVG.
+- [x] Exportar SVG.
 - [ ] Avaliar exportação PDF, EPS e DXF com UniConvertor.
 
 ## 12. Vetorização colorida
 
-- [ ] Integrar VTracer colorido em versão fixada e reproduzível.
-- [ ] Reduzir paleta antes do traçado.
+- [x] Integrar VTracer colorido em versão fixada e reproduzível.
+- [x] Reduzir paleta antes do traçado.
 - [ ] Opções de 2, 4, 8, 16 e 32 cores.
-- [ ] Paleta automática.
+- [x] Paleta automática.
 - [ ] Avaliar paleta personalizada posteriormente.
 - [ ] Remover formas e manchas menores que o limite escolhido.
 - [ ] Preservar transparência e ignorar o fundo transparente.
 - [ ] Modos para curvas suaves e cantos firmes.
-- [ ] Usar mosaico/cutout sem frestas quando comprovadamente melhor.
+- [x] Usar mosaico/cutout sem frestas quando comprovadamente melhor.
 - [ ] Mostrar número aproximado de formas e tamanho do SVG.
 - [ ] Evitar SVG enorme e impraticável em fotografias.
 - [ ] Avisar quando a imagem não for adequada à vetorização colorida.
@@ -219,10 +219,10 @@ Fluxos igualmente válidos:
 - [x] PNG sem perdas com transparência.
 - [x] WebP Q95 com transparência dentro do limite de dimensões.
 - [x] JPEG Q95 sempre com fundo branco.
-- [ ] SVG verdadeiro para vetores.
+- [x] SVG verdadeiro para vetores.
 - [ ] PDF/EPS/DXF após validação.
-- [ ] Manter o nome original como prefixo.
-- [ ] Acrescentar operação, escala, motor e modo ao nome.
+- [x] Manter o nome original como prefixo.
+- [x] Acrescentar operação, escala, motor e modo ao nome.
 - [ ] Exemplos: `_upscale-4x_foto-fiel`, `_sem-fundo_birefnet-hr`, `_vetor-pb_potrace`.
 - [ ] Evitar repetir sufixos desnecessários em cadeias longas.
 - [ ] Guardar metadados da cadeia de operações separadamente.
@@ -232,9 +232,9 @@ Fluxos igualmente válidos:
 - [x] Um trabalho pesado por vez.
 - [x] Cancelamento solicitado pelo usuário.
 - [ ] Cancelamento liberar efetivamente RAM e VRAM.
-- [ ] Não iniciar trabalho duplicado ao clicar duas vezes.
-- [ ] Não gerar WebP pesado antes de o usuário solicitar.
-- [ ] Preview nunca carregar o PNG final gigante no navegador.
+- [x] Não iniciar trabalho duplicado ao clicar duas vezes.
+- [x] Não gerar WebP pesado antes de o usuário solicitar.
+- [x] Preview nunca carregar o PNG final gigante no navegador.
 - [ ] Limitar memória de CPU durante codificação de arquivos grandes.
 - [ ] Usar tiles também nos novos motores quando necessário.
 - [ ] Recuperar-se de CUDA Out Of Memory reduzindo bloco ou resolução de inferência.
@@ -249,8 +249,8 @@ Fluxos igualmente válidos:
 - [ ] Logar resolução de entrada e saída.
 - [ ] Logar tempo total e por etapa.
 - [ ] Logar pico aproximado de RAM e VRAM.
-- [ ] Mostrar confirmação visual `Concluído` somente depois de validar o arquivo gerado.
-- [ ] Verificar se PNG/SVG abre antes de liberar o download.
+- [x] Mostrar confirmação visual `Concluído` somente depois de validar o arquivo gerado.
+- [x] Verificar se PNG/SVG abre antes de liberar o download.
 - [ ] Disponibilizar botão para copiar o log de erro.
 - [ ] Evitar mensagens genéricas como somente `HTTP 404` ou `Falha`.
 
@@ -272,8 +272,8 @@ Fluxos igualmente válidos:
 
 ## 18. Critério para considerar uma fase pronta
 
-- [ ] Código compilado e sem erro de sintaxe.
-- [ ] Testes automatizados relevantes aprovados.
+- [x] Código compilado e sem erro de sintaxe.
+- [x] Testes automatizados relevantes aprovados.
 - [ ] Teste real concluído numa sessão T4 nova.
 - [ ] Arquivos dos modelos baixados e validados.
 - [ ] Resultado visual comparado com a entrada.

@@ -1,0 +1,140 @@
+/* Versão inicial dedicada ao upscale com GPU. */
+.upscale-only{grid-template-columns:66px 370px minmax(0,1fr)}
+.upscale-only .local-badge{max-width:175px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.local-badge.offline{color:#ff8b78;border-color:#71392f;background:#2b1715}
+.scale-grid.three{grid-template-columns:repeat(3,1fr)}
+.scale-grid.three button{padding:10px 5px}
+.scale-grid.three button small{display:block;white-space:nowrap}
+.output-summary{background:#12131a}
+.resolution-badge{font-size:11px;color:#8e8f9b;border:1px solid #2c2d36;border-radius:8px;padding:8px 10px;white-space:nowrap}
+.fit-button{border-radius:9px!important}
+.zoom .zoom-value{min-width:92px;border-radius:0;padding-inline:8px;font-size:11px;font-weight:700}
+.tile-progress{display:grid!important;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:10px}
+.tile-progress i{display:block;aspect-ratio:1;border-radius:2px;border:1px solid #353640;background:#17181f;transition:background .15s,border-color .15s,box-shadow .15s}
+.tile-progress i.done{border-color:#ff744b;background:linear-gradient(135deg,#ff8d46,#ed3f69);box-shadow:0 0 8px #ff654944}
+.actions .download-png{color:#fff;border-color:#376b55;background:#173326;font-weight:700}
+.image-stage>img,.after-layer img{image-rendering:auto}
+@media(max-width:1150px){.upscale-only{grid-template-columns:58px 320px minmax(0,1fr)}.resolution-badge{display:none}}
+
+/* Layout compacto inspirado no fluxo da referência: visualizador à esquerda,
+   controles à direita e nenhuma rolagem da página inteira. */
+.upscale-only{grid-template-columns:minmax(0,1fr) 330px;grid-template-rows:58px minmax(0,1fr);width:min(100%,1320px);margin:0 auto;background:#090a0f}
+body:has(.upscale-only){overflow:auto;background:#090a0f;min-width:0}
+.upscale-only .rail{grid-column:1/-1;grid-row:1;flex-direction:row;padding:8px 16px;border-right:0;border-bottom:1px solid #252630;gap:11px}
+.upscale-only .brand-mark{width:36px;height:36px;border-radius:10px;font-size:19px}
+.upscale-only .brand-name{font-size:15px;letter-spacing:.04em}
+.upscale-only .brand-subtitle{color:#777986;font-size:11px;margin-left:3px}
+.upscale-only .rail nav{display:flex;flex-direction:row;width:auto;margin:0 0 0 auto;gap:5px}
+.upscale-only .rail nav button{height:39px;min-width:68px;padding:3px 7px;display:flex;flex-direction:row;gap:5px;border-radius:9px}
+.upscale-only .rail nav button span{font-size:16px}
+.upscale-only .rail nav button small{font-size:10px;white-space:nowrap}
+.upscale-only .rail nav button.active{box-shadow:inset 0 -2px #ff6a42}
+.check-row{display:flex;align-items:center;gap:7px!important;color:#bbb!important;font-size:11px!important;font-weight:600!important;letter-spacing:0!important}
+.check-row input{accent-color:#ff7047}
+.upscale-only .side-panel{grid-column:2;grid-row:2;border:1px solid #282832;border-radius:15px;overflow-y:auto;background:#101117;margin:14px 14px 14px 7px}
+.upscale-only .workspace{grid-column:1;grid-row:2;grid-template-rows:58px 44px minmax(0,1fr) 28px;border:1px solid #282832;border-radius:15px;overflow:hidden;margin:14px 7px 14px 14px;background:#0d0e13}
+.upscale-only .side-panel header{height:66px;padding:12px 16px;position:static}
+.upscale-only .side-panel h1{font-size:17px}
+.upscale-only .field{padding:11px 16px;gap:7px}
+.upscale-only .field>label{font-size:9px}
+.upscale-only .file-button{min-height:42px;padding:8px 11px;max-height:58px;font-size:12px}
+.upscale-only .field small{font-size:10px;line-height:1.35}
+.upscale-only .scale-grid.three button{padding:7px 4px}
+.upscale-only .scale-grid button b{font-size:18px;margin:0}
+.upscale-only .segmented button{padding:8px 5px;font-size:12px}
+.upscale-only .output-summary{padding-block:9px}
+.upscale-only .dimension{margin:0}
+.active-version{background:#111219}
+.version-current{display:flex;align-items:center;gap:9px;min-width:0}
+.version-current>span{width:27px;height:27px;display:grid;place-items:center;flex:none;border:1px solid #ff7048;border-radius:8px;color:#ff805c;font-size:11px;font-weight:900;background:#261712}
+.version-current>div{display:flex;min-width:0;flex-direction:column;gap:2px}
+.version-current strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#f1f1f4}
+.version-current small{color:#7f818d}
+.version-history{display:flex;gap:5px;overflow-x:auto;padding:2px 0;scrollbar-width:thin}
+.version-history button,.version-actions button{border:1px solid #30313b;border-radius:7px;background:#191a21;color:#a9aab4;min-height:28px;padding:5px 9px;font-size:10px;cursor:pointer;white-space:nowrap}
+.version-history button.selected{border-color:#ff7048;background:#301a14;color:#fff}
+.version-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.version-actions button:disabled{opacity:.35;cursor:not-allowed}
+.upscale-only .format-field{padding-block:10px}
+.format-switch{display:grid;grid-template-columns:repeat(3,1fr);padding:3px;border:1px solid #2b2c35;border-radius:10px;background:#14151b}
+.format-switch button{min-height:32px;border:0;border-radius:7px;background:transparent;color:#999aa5;font-size:12px;font-weight:700;cursor:pointer}
+.format-switch button.selected{color:#fff;background:#292b35;box-shadow:0 0 0 1px #393b47}
+.format-switch button:disabled{opacity:.35;cursor:not-allowed}
+.upscale-only .panel-spacer{display:none}
+.upscale-only .error{margin:8px 16px;padding:9px}
+.upscale-only .job-state{margin:7px 16px 0;padding:9px 11px;border:1px solid #2b2d37;border-radius:9px;background:#15161d}
+.upscale-only .job-state summary{display:flex;justify-content:space-between;cursor:pointer;list-style:none;font-size:11px}
+.upscale-only .job-state summary::-webkit-details-marker{display:none}
+.upscale-only .job-state summary b{color:#63d7aa}
+.upscale-only .tile-progress{grid-template-columns:repeat(12,1fr);gap:3px;margin-top:8px}
+.upscale-only .actions{position:static;margin-top:8px;padding:4px 16px 12px;gap:7px;border-top:0;background:#101117}
+.upscale-only .actions button{min-height:40px;font-size:12px}
+.download-menu{border:1px solid #296d59;border-radius:9px;background:#123b30;overflow:hidden}
+.download-menu>summary{list-style:none;cursor:pointer;padding:12px;text-align:center;font-weight:800;color:#fff;font-size:13px}
+.download-menu>summary::-webkit-details-marker{display:none}
+.download-menu[open]>summary{border-bottom:1px solid #296d59}
+.download-menu>button{width:calc(100% - 12px);margin:6px;min-height:35px!important}
+.upscale-only .workspace-toolbar{padding:8px 14px;gap:8px}
+.upscale-only .workspace-toolbar button{padding:8px 10px;font-size:12px}
+.upscale-only .background-switch{margin-left:auto}
+.upscale-only .canvas{margin:12px;border-radius:13px;cursor:default;overscroll-behavior:contain;touch-action:none}
+.upscale-only .canvas.pannable{cursor:grab}
+.upscale-only .canvas.pannable.pan-modifier,.upscale-only .canvas.pannable.pan-modifier .divider{cursor:grab}
+.upscale-only .canvas.panning{cursor:grabbing;user-select:none}
+.upscale-only .canvas.panning .divider{cursor:grabbing}
+.upscale-only .compare-slider{pointer-events:none}
+.upscale-only .image-stage{border-radius:10px;overflow:hidden;box-shadow:0 8px 28px #0006}
+.upscale-only .divider{width:24px;transform:translateX(-50%);background:transparent;box-shadow:none;pointer-events:auto;cursor:ew-resize;touch-action:none}
+.upscale-only .divider::before{content:"";position:absolute;inset:0 auto 0 50%;width:2px;transform:translateX(-50%);background:#fff;box-shadow:0 0 0 1px #0008,0 0 12px #0008}
+.compare-handle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:45px;height:45px;border:0;border-radius:50%;display:grid;place-items:center;background:#fff;color:#111;font-size:19px;font-weight:900;box-shadow:0 4px 16px #0008;white-space:nowrap;pointer-events:none}
+.compare-handle:active{transform:translate(-50%,-50%) scale(.96)}
+.upscale-only .before-label,.upscale-only .after-label{font-size:10px;padding:6px 9px;border-radius:7px}
+.viewer-controls{display:flex;align-items:center;gap:8px;padding:5px 14px;border-bottom:1px solid #252630;background:#0e0f14}
+.viewer-controls button{height:34px;border:1px solid #31333d;border-radius:8px;background:#191a21;color:#eee;padding:0 12px;cursor:pointer}
+.viewer-controls button:first-child,.viewer-controls button:nth-child(3){width:38px;padding:0;font-size:18px}
+.viewer-controls strong{min-width:62px;text-align:center;font-size:12px}
+.viewer-controls span{margin-left:auto;color:#696b77;font-size:10px}
+.upscale-only .workspace footer{padding-inline:14px}
+
+@media(max-width:1050px){
+  .upscale-only{grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:54px minmax(0,1fr)}
+  .upscale-only .rail{padding-block:7px}
+  .upscale-only .brand-subtitle{display:none}
+  .upscale-only .workspace{grid-template-rows:auto 44px minmax(0,1fr) 26px}
+  .viewer-controls span{display:none}
+}
+
+/* Em uma janela estreita, vira um site de uma coluna como a referência. */
+@media(max-width:900px){
+  body:has(.upscale-only){overflow-y:auto;overflow-x:hidden}
+  .upscale-only{display:flex;width:100%;max-width:680px;height:auto;min-height:100dvh;margin:0 auto;flex-direction:column;background:#090a0f}
+  .upscale-only .rail{order:0;position:sticky;top:0;z-index:20;min-height:54px;flex:none;background:#090a0fee;backdrop-filter:blur(12px)}
+  .upscale-only .rail{overflow-x:auto}
+  .upscale-only .brand-subtitle{display:none}
+  .upscale-only .rail nav{margin-left:10px;flex:none}
+  .upscale-only .rail nav button{min-width:52px}
+  .upscale-only .rail nav button small{display:none}
+  .upscale-only .workspace{order:1;display:grid;width:auto;height:calc(100dvh - 72px);min-height:620px;max-height:none;margin:9px 10px;overflow:hidden;grid-template-rows:auto 48px minmax(0,1fr) 27px;border-radius:14px}
+  .upscale-only .side-panel{order:2;width:auto;max-height:none;overflow:visible;margin:10px;border-radius:14px}
+  .upscale-only .side-panel header{position:static}
+  .upscale-only .actions{margin-top:8px;border-radius:0 0 14px 14px}
+  .upscale-only .canvas{min-height:0;margin:9px}
+  .upscale-only .workspace-toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .upscale-only .workspace-toolbar::-webkit-scrollbar{display:none}
+  .upscale-only .resolution-badge{display:none}
+  .upscale-only .background-switch{flex:none}
+  .viewer-controls{overflow-x:auto;scrollbar-width:none}
+  .viewer-controls button{white-space:nowrap}
+  .viewer-controls span{display:none}
+}
+
+@media(max-width:520px){
+  .upscale-only .brand-subtitle{display:none}
+  .upscale-only .workspace{height:calc(100dvh - 66px);min-height:560px;margin:6px}
+  .upscale-only .side-panel{margin:8px 6px}
+  .upscale-only .workspace-toolbar{padding:7px}
+  .upscale-only .workspace-toolbar button{padding:8px 9px}
+  .upscale-only .background-switch button:not(:first-child){display:none}
+  .viewer-controls{padding-inline:8px;gap:5px}
+  .viewer-controls button{padding-inline:9px}
+}

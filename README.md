@@ -8,6 +8,10 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 
 - RealESRGAN x4plus oficial para fotos e uso geral.
 - RealESRGAN x4plus Anime 6B para ilustrações e estampas.
+- BiRefNet HR-Matting como removedor principal e BEN2 como alternativa refinada, ambos carregados sob demanda.
+- Limpeza independente para foto/ilustração e limpeza do canal alpha.
+- Conversão P&B independente com limiar adaptativo, Otsu ou manual.
+- Vetorização colorida VTracer 1.0 (mosaico sem frestas) e Potrace para arte monocromática.
 - Processamento CUDA FP16 em blocos de 400 px com sobreposição.
 - PNG transparente preservado sem converter o fundo para branco.
 - Comparação HD progressiva: abre com preview leve e carrega uma inspeção WebP de até 4096 px para revelar a diferença real do upscale sem travar a página.
@@ -31,7 +35,15 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 3. Execute a única célula **INICIAR SUPERIMAGEM GPU T4**.
 4. Ao terminar, clique em **ABRIR SUPERIMAGEM EM NOVA ABA**. A interface não ocupa o notebook.
 
-O primeiro processamento baixa o peso oficial do modelo escolhido. Arquivos enviados e resultados ficam somente no armazenamento temporário da sessão do Colab.
+Na inicialização são validados os dois pesos pequenos do upscale. BiRefNet HR e BEN2 são maiores e baixam somente na primeira vez em que o motor é escolhido. Arquivos enviados, pesos baixados e resultados ficam no armazenamento temporário da sessão do Colab.
+
+## Validação
+
+- TypeScript estrito e build Vite.
+- Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.
+- Teste raster sintético de limpeza e preto e branco.
+- Geração e validação estrutural de SVG real pelo VTracer.
+- A remoção de fundo e o upscale continuam exigindo a validação final numa T4 nova, pois não há CUDA no teste local.
 
 Mais detalhes: [colab/LEIA-ME-COLAB.md](colab/LEIA-ME-COLAB.md).
 
