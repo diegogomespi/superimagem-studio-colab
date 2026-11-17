@@ -35,7 +35,7 @@ export interface JobOptions {
   maskContrast?: number;
   profile?: Profile;
   scale?: 2 | 4 | 8;
-  upscaleModel?: 'general' | 'illustration' | 'vector-refine';
+  upscaleModel?: 'general' | 'illustration' | 'logos' | 'vector-refine';
   detailMode?: 'faithful' | 'detailed';
   denoise?: number;
   sharpness?: number;

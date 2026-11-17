@@ -8,7 +8,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 
 - RealESRGAN x4plus oficial para fotos e uso geral.
 - RealESRGAN x4plus Anime 6B para ilustrações e estampas.
-- SwinIR Classical x4 oficial como motor experimental. Treinado para super-resolução clássica, não é especialista comprovado em reconstrução de logos ou tipografia.
+- Logo / letras · conservador: RealESRNet x4plus oficial, treinado com MSE. Substitui o botão SwinIR; pode suavizar a imagem e não garante recuperar letras ilegíveis. SwinIR permanece apenas por compatibilidade com chamadas antigas.
 - BiRefNet HR-Matting como removedor principal e BEN2 como alternativa refinada, ambos carregados sob demanda.
 - Limpeza independente para foto/ilustração e limpeza do canal alpha.
 - Conversão P&B independente com limiar adaptativo, Otsu ou manual.
@@ -41,7 +41,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 3. Execute a única célula **INICIAR SUPERIMAGEM GPU T4**.
 4. Ao terminar, clique em **ABRIR SUPERIMAGEM EM NOVA ABA**. A interface não ocupa o notebook.
 
-Na inicialização são validados os dois pesos pequenos do upscale comum. SwinIR Classical, BiRefNet HR e BEN2 são baixados sob demanda somente na primeira vez em que cada motor é escolhido. O peso oficial do SwinIR tem aproximadamente 65 MiB. Arquivos enviados, pesos baixados e resultados ficam no armazenamento temporário da sessão do Colab.
+Na inicialização são validados os dois pesos pequenos do upscale comum. RealESRNet (aproximadamente 64 MiB), BiRefNet HR e BEN2 são baixados sob demanda somente na primeira vez em que cada motor é escolhido. SwinIR legado também permanece sob demanda. Arquivos enviados, pesos baixados e resultados ficam no armazenamento temporário da sessão do Colab.
 
 ## Validação
 
@@ -95,3 +95,15 @@ Planejamento e andamento: [CHECKLIST_IMPLEMENTACAO.md](CHECKLIST_IMPLEMENTACAO.m
 - Não foi adicionado script para simular uso. Heartbeat mede disponibilidade; não impede limites de inatividade/duração da plataforma. [Regras e limites oficiais do Colab](https://research.google.com/colaboratory/faq.html).
 - Referências: [inferência oficial SwinIR](https://github.com/JingyunLiang/SwinIR/blob/main/main_test_swinir.py), [Real-ESRGAN e outscale](https://github.com/xinntao/Real-ESRGAN).
 - Validação: `node tests/validate_runtime_health.mjs`, `tests/validate_upscale_limits.py`, `tests/validate_api_workflow.py`. Os testes simulam estado CUDA/OOM e rede, sem afirmar inferência real na T4.
+
+### Alternativa para logos e tipografia
+
+A opção **Logo / letras · conservador** usa o peso oficial `RealESRNet_x4plus.pth` do Real-ESRGAN, SHA-256 `a820b9bde89a874d7599d545567308ce6c128fc8754a53208eda016d40aa81df`, 67.040.989 bytes. Arquitetura RRDB x4, Spandrel 0.4.2, FP16 previsto na T4; teste real local feito em CPU FP32. Download/validação/carregamento aparecem nos logs normais. Não requer novas bibliotecas no Colab nem carrega modelos simultaneamente.
+
+O [model zoo oficial](https://github.com/xinntao/Real-ESRGAN/blob/master/docs/model_zoo.md) descreve MSE e alerta para suavização. A hipótese é reduzir distorções perceptuais do treinamento adversarial. Isso não prova superioridade em letras pequenas. SPAN/NomosUni também foi considerado: o [autor](https://huggingface.co/Phips/4xNomosUni_span_multijpg) o descreve como universal para múltiplos redimensionamentos/JPEG, sem evidência específica para as logos do usuário; não foi instalado no projeto nesta mudança.
+
+Teste repetível: `python tests/validate_realesrnet_real.py CAMINHO_PESO PASTA_RESULTADOS`. Gera texto Arial/DejaVu, reduz 4x e testa também JPEG Q60 com blur 0,45. Usa a função real de blocos do backend em CPU, pesos oficiais e Spandrel; verifica saída 4x, composição alfa e nome exportado. Gera imagens lado a lado (referência / Lanczos / RealESRNet) e relatório JSON.
+
+No teste Windows CPU PyTorch 2.15.0, os dois exemplos tiveram PSNR/IoU de tinta melhores que Lanczos: limpo 24,415 dB / 0,8467 contra 22,777 / 0,7890; JPEG 23,050 / 0,8108 contra 19,137 / 0,7096. São apenas duas amostras sintéticas e métricas globais: inspeção visual ainda mostrou letras pequenas deformadas. **Não é um benchmark contra RealESRGAN/Anime/SwinIR, nem teste de desempenho na T4, nem aprovação na logo do usuário.**
+
+A comparação justa usa a mesma entrada anterior para todos os motores. Teste primeiro 4x; o modo Logo força 8x fiel (uma inferência x4 e redimensionamento final), evitando nova inferência sobre letras já reconstruídas. Para texto sem informação suficiente no raster, nenhum desses motores garante identidade tipográfica: pode ser necessário reconstruir o texto separadamente no CorelDRAW. A opção não promete gerar vetores; sua saída continua raster.

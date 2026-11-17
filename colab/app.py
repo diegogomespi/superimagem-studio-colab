@@ -59,6 +59,15 @@ MODEL_SPECS = {
         'sha256': 'f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da',
         'blocks': 6,
     },
+    'logos': {
+        'name': 'RealESRNet_x4plus',
+        'url': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.1/RealESRNet_x4plus.pth',
+        'file': 'RealESRNet_x4plus.pth',
+        'sha256': 'a820b9bde89a874d7599d545567308ce6c128fc8754a53208eda016d40aa81df',
+        'blocks': 23,
+        'precision': 'fp16',
+        'preload': False,
+    },
     'vector-refine': {
         'name': 'SwinIR-M_classical_DF2K_x4',
         'url': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x4.pth',
@@ -173,6 +182,7 @@ def processed_filename(original: str, scale: int, model_kind: str, detail_mode: 
     model_tag = {
         'general': 'RealESRGAN-x4plus',
         'illustration': 'RealESRGAN-anime-6B',
+        'logos': 'RealESRNet-x4plus',
         'vector-refine': 'SwinIR-classical-x4',
     }.get(model_kind, 'IA-x4')
     mode_tag = f"_{'detalhado' if detail_mode == 'detailed' else 'fiel'}" if scale == 8 else ''
@@ -304,7 +314,7 @@ def extend_transparent_colors(bgra: np.ndarray) -> np.ndarray:
     return bgr
 
 
-def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], completed: list[int], total: int, tile: int = 400, use_half: bool = True, input_multiple: int = 1) -> np.ndarray:
+def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], completed: list[int], total: int, tile: int = 400, use_half: bool = True, input_multiple: int = 1, device: str = 'cuda') -> np.ndarray:
     height, width = bgr.shape[:2]
     native = 4
     output = np.empty((height * native, width * native, 3), dtype=np.uint8)
@@ -325,7 +335,7 @@ def upscale_rgb_tiled(bgr: np.ndarray, model: Any, job: dict[str, Any], complete
             dtype = torch.float16 if use_half else torch.float32
             job['tileStartedAtEpoch'] = time.time()
             print(f'[UPSCALE] bloco {completed[0]+1}/{total} | {patch_w}x{patch_h} | {"FP16" if use_half else "FP32"}', flush=True)
-            tensor = torch.from_numpy(np.ascontiguousarray(patch.transpose(2, 0, 1))).unsqueeze(0).to(device='cuda', dtype=dtype).div_(255.0)
+            tensor = torch.from_numpy(np.ascontiguousarray(patch.transpose(2, 0, 1))).unsqueeze(0).to(device=device, dtype=dtype).div_(255.0)
             with torch.inference_mode():
                 prediction = model(tensor).clamp_(0, 1)
             result = prediction[0].float().cpu().numpy().transpose(1, 2, 0)
@@ -711,6 +721,8 @@ async def create_job(request: JobRequest) -> dict[str, Any]:
     if artifacts[request.artifactId].get('candidate'):
         raise HTTPException(409, 'Aceite ou descarte a reconstrução antes de iniciar outra operação.')
     if request.operation == 'upscale':
+        if request.options.get('upscaleModel') == 'logos':
+            request.options['detailMode'] = 'faithful'
         from colab.upscale_limits import validate_upscale
         try:
             validate_upscale(artifacts[request.artifactId], request.options, psutil.virtual_memory().available)
