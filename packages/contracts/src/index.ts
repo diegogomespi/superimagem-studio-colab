@@ -26,6 +26,8 @@ export interface JobOptions {
   scale?: 2 | 4 | 8;
   upscaleModel?: 'general' | 'illustration' | 'vector-refine';
   detailMode?: 'faithful' | 'detailed';
+  denoise?: number;
+  sharpness?: number;
   backgroundEngine?: 'birefnet-hr' | 'ben2';
   refineEdges?: boolean;
   cleanStyle?: 'illustration' | 'photo';

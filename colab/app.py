@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 from colab.operations import black_white, clean_image, remove_background, vectorize
+from colab.enhancement import improve_raster
 
 # BasicSR antigo importa um módulo renomeado nas versões novas do torchvision.
 from spandrel import ModelLoader
@@ -318,6 +319,8 @@ def process_job(job_id: str) -> None:
                 model = get_model(model_kind, job)
                 model_spec = MODEL_SPECS[model_kind]
                 job.update(status='processing', phase='inference')
+                if options.get('denoise', 0):
+                    image = improve_raster(image, denoise=int(options['denoise']), sharpness=0)
                 source_bgr = extend_transparent_colors(image) if has_alpha else image[:, :, :3]
                 use_half = model_spec.get('precision', 'fp16') == 'fp16'
                 input_multiple = int(model_spec.get('input_multiple', 1))
@@ -339,6 +342,8 @@ def process_job(job_id: str) -> None:
                 else:
                     output = rgb
                 model_id = MODEL_SPECS[options.get('upscaleModel', 'general')]['name']
+                if options.get('sharpness', 0):
+                    output = improve_raster(output, sharpness=int(options['sharpness']))
                 filename = processed_filename(source['filename'], scale, options.get('upscaleModel', 'general'), options.get('detailMode', 'faithful'))
             elif operation == 'remove-background':
                 output, model_id = remove_background(image, options, job)
