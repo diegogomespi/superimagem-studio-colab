@@ -54,7 +54,7 @@ Fluxos igualmente válidos:
 - [ ] Permitir renomear versões.
 - [x] Excluir somente uma versão sem apagar outras por acidente.
 - [x] Botão `Desfazer` que apenas seleciona o pai da versão ativa.
-- [ ] Botão `Refazer` enquanto o caminho ainda existir.
+- [x] Botões pequenos de voltar/avançar em cada ferramenta enquanto o caminho de navegação existir.
 - [x] Árvore visual compacta quando houver ramificações.
 - [ ] Manter os artefatos somente na sessão do Colab nesta primeira fase.
 
@@ -96,6 +96,7 @@ Fluxos igualmente válidos:
 
 - [x] Real-ESRGAN x4plus para Foto/geral.
 - [x] Real-ESRGAN x4plus Anime 6B para Ilustração/estampa.
+- [x] SwinIR Classical x4 oficial, carregado sob demanda, para refinar logotipos, letras e bordas antes de vetorizar.
 - [x] Processamento CUDA FP16 em blocos com sobreposição.
 - [x] Redução automática do bloco quando faltar VRAM.
 - [x] Preservar transparência ampliando RGB e alpha separadamente.
@@ -207,7 +208,7 @@ Fluxos igualmente válidos:
 
 ## 13. Upscale antes da vetorização
 
-- [ ] Oferecer preparação 2× ou 4× Fiel para imagens pequenas e serrilhadas.
+- [x] Oferecer preparação fiel 2×, 4× ou 8× com SwinIR Classical para imagens pequenas e serrilhadas.
 - [ ] Não usar 8× Detalhado automaticamente para vetor.
 - [ ] Comparar original, 2× Fiel e 4× Fiel antes do VTracer.
 - [ ] Medir quantidade de nós, tamanho do SVG e fidelidade renderizada.

@@ -5,7 +5,7 @@ import './styles.css';
 import './gpu-upscale.css';
 
 type Scale = 2 | 4 | 8;
-type UpscaleModel = 'general' | 'illustration';
+type UpscaleModel = 'general' | 'illustration' | 'vector-refine';
 type DetailMode = 'faithful' | 'detailed';
 type Operation = 'upscale' | 'remove-background' | 'clean' | 'black-white' | 'vectorize';
 type Panel = Operation | 'history';
@@ -71,7 +71,10 @@ function App() {
   const [slidingCompare, setSlidingCompare] = useState(false);
   const [panModifier, setPanModifier] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [navigationTrail, setNavigationTrail] = useState<string[]>([]);
+  const [navigationIndex, setNavigationIndex] = useState(-1);
   const submitLock = useRef(false);
+  const navigationIndexRef = useRef(-1);
   const fileInput = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -138,6 +141,16 @@ function App() {
 
   const revoke = (url: string) => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
   const loadPreviewImage = async (id: string, inspection = false) => URL.createObjectURL(await (await api(`/api/artifacts/${id}/preview${inspection ? '?inspection=1' : ''}`)).blob());
+  const recordNavigation = (id: string) => {
+    setNavigationTrail(current => {
+      const base = current.slice(0, navigationIndexRef.current + 1);
+      if (base[base.length - 1] === id) return current;
+      const next = [...base, id];
+      navigationIndexRef.current = next.length - 1;
+      setNavigationIndex(next.length - 1);
+      return next;
+    });
+  };
   const upload = async (file?: File) => {
     if (!file) return;
     setError(''); const body = new FormData(); body.append('file', file);
@@ -145,7 +158,8 @@ function App() {
       const item: ArtifactInfo = await (await api('/api/artifacts', { method: 'POST', body })).json();
       const url = await loadPreviewImage(item.id);
       revoke(beforeUrl); revoke(afterUrl); revoke(beforeInspectUrl); revoke(afterInspectUrl);
-      setArtifact(item); setOriginal(item); setVersions([item]); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
+      navigationIndexRef.current = 0;
+      setArtifact(item); setOriginal(item); setVersions([item]); setNavigationTrail([item.id]); setNavigationIndex(0); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const execute = async () => {
@@ -173,7 +187,7 @@ function App() {
         if (terminal.has(next.status)) setError('');
         if (next.status === 'done' && next.resultArtifactId) {
           const result: ArtifactInfo = await (await api(`/api/artifacts/${next.resultArtifactId}`)).json();
-          const url = await loadPreviewImage(next.resultArtifactId); revoke(afterUrl); setAfterUrl(url); setArtifact(result); setVersions(current => current.some(item => item.id === result.id) ? current : [...current, result]); setView('result'); setFit(true);
+          const url = await loadPreviewImage(next.resultArtifactId); revoke(afterUrl); setAfterUrl(url); setArtifact(result); recordNavigation(result.id); setVersions(current => current.some(item => item.id === result.id) ? current : [...current, result]); setView('result'); setFit(true);
           const sourceId = next.artifactId;
           if (sourceId) Promise.all([loadPreviewImage(sourceId, true), loadPreviewImage(next.resultArtifactId, true)]).then(([sourceInspect, resultInspect]) => {
             revoke(beforeInspectUrl); revoke(afterInspectUrl); setBeforeInspectUrl(sourceInspect); setAfterInspectUrl(resultInspect);
@@ -198,10 +212,18 @@ function App() {
       a.href = endpoint.toString(); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
     }
   };
-  const selectVersion = async (item: ArtifactInfo) => {
+  const selectVersion = async (item: ArtifactInfo, record = true) => {
     const url = await loadPreviewImage(item.id);
     revoke(beforeUrl); revoke(afterUrl); revoke(beforeInspectUrl); revoke(afterInspectUrl);
+    if (record) recordNavigation(item.id);
     setArtifact(item); setOperationSource(null); setBeforeUrl(url); setAfterUrl(''); setBeforeInspectUrl(''); setAfterInspectUrl(''); setJob(null); setView('original'); setFit(true); setZoom(100);
+  };
+  const navigateVersion = async (direction: -1 | 1) => {
+    const nextIndex = navigationIndex + direction;
+    if (nextIndex < 0 || nextIndex >= navigationTrail.length) return;
+    const target = versions.find(item => item.id === navigationTrail[nextIndex]);
+    if (!target) return;
+    navigationIndexRef.current = nextIndex; setNavigationIndex(nextIndex); await selectVersion(target, false);
   };
   const undo = () => {
     if (!artifact?.parentId) return;
@@ -217,7 +239,10 @@ function App() {
       if (!parent) throw new Error('A versão anterior não foi encontrada.');
       await api(`/api/artifacts/${artifact.id}`, { method: 'DELETE' });
       setVersions(current => current.filter(item => item.id !== artifact.id));
-      await selectVersion(parent);
+      const nextTrail = navigationTrail.filter(id => id !== artifact.id);
+      const parentIndex = Math.max(0, nextTrail.lastIndexOf(parent.id));
+      navigationIndexRef.current = parentIndex; setNavigationTrail(nextTrail); setNavigationIndex(parentIndex);
+      await selectVersion(parent, false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const changeZoom = (next: number) => { setFit(false); setZoom(Math.max(25, Math.min(400, next))); };
@@ -266,7 +291,7 @@ function App() {
   const versionLabel = (item: ArtifactInfo) => {
     if (!item.parentId) return 'Imagem original';
     const options = item.options ?? {};
-    if (item.operation === 'upscale') return `Ampliação ${options.scale ?? ''}× · ${options.upscaleModel === 'illustration' ? 'Ilustração' : 'Foto'}`;
+    if (item.operation === 'upscale') return `Ampliação ${options.scale ?? ''}× · ${options.upscaleModel === 'illustration' ? 'Ilustração' : options.upscaleModel === 'vector-refine' ? 'Refino vetorial' : 'Foto'}`;
     if (item.operation === 'remove-background') return `Fundo removido · ${item.engine?.startsWith('BEN2') ? 'BEN2' : 'BiRefNet HR'}`;
     if (item.operation === 'clean') return `Limpeza · ${options.cleanStyle === 'photo' ? 'Foto' : 'Ilustração'}`;
     if (item.operation === 'black-white') return `Preto e branco · ${options.thresholdMode === 'otsu' ? 'Otsu' : options.thresholdMode === 'manual' ? 'Manual' : 'Adaptativo'}`;
@@ -278,12 +303,12 @@ function App() {
     <section className="side-panel">
       <header><div><p>SUPERIMAGEM STUDIO</p><h1>{activePanel === 'history' ? 'Histórico' : operationNames[operation]}</h1></div><span className={`local-badge ${gpuLabel === 'DESCONECTADO' ? 'offline' : ''}`}>● {gpuLabel}</span></header>
       {activePanel !== 'history' && <div className="field"><label>IMAGEM</label><button className="file-button" onClick={() => fileInput.current?.click()}>{icons.upload} {artifact ? artifact.filename : 'Escolher imagem'}</button><input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => upload(e.target.files?.[0])}/>{artifact && <small>{artifact.width} × {artifact.height}px · {artifact.hasAlpha ? 'transparência será preservada' : 'imagem opaca'}</small>}</div>}
-      {activePanel === 'upscale' && <><div className="field"><label>NÍVEL DE AUMENTO</label><div className="scale-grid three"><button className={scale === 2 ? 'selected' : ''} onClick={() => setScale(2)}><b>2×</b><small>4× pixels</small></button><button className={scale === 4 ? 'selected' : ''} onClick={() => setScale(4)}><b>4×</b><small>16× pixels</small></button><button className={scale === 8 ? 'selected' : ''} onClick={() => setScale(8)}><b>8×</b><small>64× pixels</small></button></div></div><div className="field"><label>TIPO DE IMAGEM</label><div className="segmented"><button className={model === 'general' ? 'selected' : ''} onClick={() => setModel('general')}>Foto / geral</button><button className={model === 'illustration' ? 'selected' : ''} onClick={() => setModel('illustration')}>Ilustração / estampa</button></div><small>{model === 'general' ? 'RealESRGAN x4plus oficial para fotos e uso geral.' : 'RealESRGAN Anime 6B para traços, estampas e cores chapadas.'}</small></div>{scale === 8 && <div className="field"><label>MODO 8×</label><div className="segmented"><button className={detailMode === 'faithful' ? 'selected' : ''} onClick={() => setDetailMode('faithful')}>Fiel</button><button className={detailMode === 'detailed' ? 'selected' : ''} onClick={() => setDetailMode('detailed')}>Detalhado</button></div></div>}</>}
+      {activePanel === 'upscale' && <><div className="field"><label>NÍVEL DE AUMENTO</label><div className="scale-grid three"><button className={scale === 2 ? 'selected' : ''} onClick={() => setScale(2)}><b>2×</b><small>4× pixels</small></button><button className={scale === 4 ? 'selected' : ''} onClick={() => setScale(4)}><b>4×</b><small>16× pixels</small></button><button className={scale === 8 ? 'selected' : ''} onClick={() => setScale(8)}><b>8×</b><small>64× pixels</small></button></div></div><div className="field"><label>TIPO DE IMAGEM</label><div className="segmented model-options"><button className={model === 'general' ? 'selected' : ''} onClick={() => setModel('general')}>Foto / geral</button><button className={model === 'illustration' ? 'selected' : ''} onClick={() => setModel('illustration')}>Ilustração / estampa</button><button className={model === 'vector-refine' ? 'selected' : ''} onClick={() => setModel('vector-refine')}>Refinar logo / letras</button></div><small>{model === 'general' ? 'RealESRGAN x4plus oficial para fotos e uso geral.' : model === 'illustration' ? 'RealESRGAN Anime 6B para traços, estampas e cores chapadas.' : 'SwinIR Classical oficial: recuperação fiel de bordas, letras e logotipos antes de vetorizar.'}</small></div>{scale === 8 && <div className="field"><label>MODO 8×</label><div className="segmented"><button className={detailMode === 'faithful' ? 'selected' : ''} onClick={() => setDetailMode('faithful')}>Fiel</button><button className={detailMode === 'detailed' ? 'selected' : ''} onClick={() => setDetailMode('detailed')}>Detalhado</button></div></div>}</>}
       {activePanel === 'remove-background' && <div className="field"><label>MOTOR DE RECORTE</label><div className="segmented"><button className={backgroundEngine === 'birefnet-hr' ? 'selected' : ''} onClick={() => setBackgroundEngine('birefnet-hr')}>BiRefNet HR</button><button className={backgroundEngine === 'ben2' ? 'selected' : ''} onClick={() => setBackgroundEngine('ben2')}>BEN2</button></div><small>{backgroundEngine === 'birefnet-hr' ? 'Principal: transparência e bordas em alta resolução.' : 'Alternativa forte para objetos, cabelo e recorte refinado.'}</small><label className="check-row"><input type="checkbox" checked={refineEdges} onChange={e => setRefineEdges(e.target.checked)}/> Refinar bordas e cabelo</label></div>}
       {activePanel === 'clean' && <div className="field"><label>TIPO DE LIMPEZA</label><div className="segmented"><button className={cleanStyle === 'illustration' ? 'selected' : ''} onClick={() => setCleanStyle('illustration')}>Ilustração</button><button className={cleanStyle === 'photo' ? 'selected' : ''} onClick={() => setCleanStyle('photo')}>Foto</button></div><label>FORÇA · {cleanStrength}%</label><input type="range" min="0" max="100" value={cleanStrength} onChange={e => setCleanStrength(+e.target.value)}/><small>Remove ruído, limpa pixels transparentes e aplica contraste conservador.</small></div>}
       {activePanel === 'black-white' && <div className="field"><label>CONVERSÃO</label><div className="segmented"><button className={thresholdMode === 'adaptive' ? 'selected' : ''} onClick={() => setThresholdMode('adaptive')}>Adaptativo</button><button className={thresholdMode === 'otsu' ? 'selected' : ''} onClick={() => setThresholdMode('otsu')}>Otsu</button><button className={thresholdMode === 'manual' ? 'selected' : ''} onClick={() => setThresholdMode('manual')}>Manual</button></div>{thresholdMode === 'manual' && <><label>LIMIAR · {threshold}</label><input type="range" min="0" max="255" value={threshold} onChange={e => setThreshold(+e.target.value)}/></>}<small>Prepara arte limpa para silk, estampa e vetorização.</small></div>}
       {activePanel === 'vectorize' && <div className="field"><label>TIPO DE VETOR</label><div className="segmented"><button className={vectorMode === 'color' ? 'selected' : ''} onClick={() => setVectorMode('color')}>Colorido</button><button className={vectorMode === 'bw' ? 'selected' : ''} onClick={() => setVectorMode('bw')}>Preto e branco</button></div>{vectorMode === 'color' && <><label>MÁXIMO DE CORES · {maxColors}</label><input type="range" min="2" max="64" value={maxColors} onChange={e => setMaxColors(+e.target.value)}/></>}<small>{vectorMode === 'color' ? 'VTracer com curvas spline e recorte sem emendas.' : 'Potrace dedicado a formas monocromáticas limpas.'}</small></div>}
-      {activePanel !== 'history' && <div className="field active-version compact-active"><label>ENTRADA DESTA OPERAÇÃO</label><div className="version-current"><span>{artifact?.versionNumber ?? (versions.findIndex(item => item.id === artifact?.id) + 1 || 0)}</span><div><strong>{artifact ? (artifact.parentId ? `V${artifact.versionNumber ?? '?'}` : 'Original') : 'Nenhuma imagem'}</strong><small>{artifact ? versionLabel(artifact) : 'Escolha uma imagem'}</small></div></div><button className="open-history" onClick={() => setActivePanel('history')}>☷ Abrir histórico · {versions.length} {versions.length === 1 ? 'versão' : 'versões'}</button></div>}
+      {activePanel !== 'history' && <div className="field active-version compact-active"><div className="compact-active-head"><label>ENTRADA DESTA OPERAÇÃO</label><div className="history-nav"><button disabled={navigationIndex <= 0} onClick={() => void navigateVersion(-1)} title="Voltar para a versão vista antes">←</button><button disabled={navigationIndex < 0 || navigationIndex >= navigationTrail.length - 1} onClick={() => void navigateVersion(1)} title="Avançar novamente">→</button></div></div><div className="version-current"><span>{artifact?.versionNumber ?? (versions.findIndex(item => item.id === artifact?.id) + 1 || 0)}</span><div><strong>{artifact ? (artifact.parentId ? `V${artifact.versionNumber ?? '?'}` : 'Original') : 'Nenhuma imagem'}</strong><small>{artifact ? versionLabel(artifact) : 'Escolha uma imagem'}</small></div></div><button className="open-history" onClick={() => setActivePanel('history')}>☷ Abrir histórico · {versions.length} {versions.length === 1 ? 'versão' : 'versões'}</button></div>}
       {activePanel === 'history' && <div className="history-panel"><div className="history-mode"><b>Histórico não linear ativo</b><small>Escolha qualquer estado. As versões posteriores são preservadas como outro ramo.</small></div>{versions.length === 0 ? <div className="history-empty">Envie uma imagem para iniciar o histórico.</div> : <div className="history-list">{[...versions].sort((a, b) => versionNumber(a) - versionNumber(b)).map((item, index) => { const number = versionNumber(item, index + 1); const parent = versions.find(candidate => candidate.id === item.parentId); const active = item.id === artifact?.id; const depth = versionDepth(item); return <button key={item.id} className={`history-state ${active ? 'active' : ''} ${depth ? 'branched' : ''}`} style={{ '--history-indent': `${depth * 12}px` } as React.CSSProperties} onClick={() => void selectVersion(item)}><i/><span className="history-number">{number === 1 ? 'O' : number}</span><span className="history-info"><strong>{number === 1 ? 'Original' : `V${number} · ${versionLabel(item)}`}</strong><small>{item.width} × {item.height}px{parent ? ` · nasceu da ${parent.parentId ? `V${parent.versionNumber}` : 'Original'}` : ''}</small></span>{active && <em>ATIVA</em>}</button>; })}</div>}<div className="history-selection"><span>Entrada selecionada</span><b>{artifact ? (artifact.parentId ? `V${artifact.versionNumber}` : 'Original') : 'Nenhuma'}</b><small>{artifact?.parentId ? `A próxima operação criará uma nova versão a partir da V${artifact.versionNumber}.` : 'A próxima operação partirá da imagem original.'}</small></div><div className="version-actions history-actions"><button disabled={!artifact?.parentId} onClick={undo}>↶ Versão-pai</button><button disabled={!original || artifact?.id === original.id} onClick={reset}>Ir à original</button><button className="delete-version" disabled={!artifact?.parentId} onClick={() => void deleteVersion()}>Excluir versão ativa</button></div></div>}
       {activePanel !== 'history' && <div className="field output-summary"><p className="dimension">Próxima saída: <strong>{outputDimensions}</strong></p><small>A operação usará exatamente a entrada indicada acima.</small></div>}
       {activePanel !== 'history' && <div className="field format-field"><label>BAIXAR VERSÃO ATIVA</label>{artifact?.mime === 'image/svg+xml' ? <div className="format-switch"><button className="selected">SVG</button></div> : <div className="format-switch"><button className={exportFormat === 'png' ? 'selected' : ''} onClick={() => setExportFormat('png')}>PNG</button><button className={exportFormat === 'jpeg' ? 'selected' : ''} onClick={() => setExportFormat('jpeg')}>JPEG</button><button className={exportFormat === 'webp' ? 'selected' : ''} disabled={Boolean(artifact && Math.max(artifact.width, artifact.height) > 16383)} onClick={() => setExportFormat('webp')}>WebP</button></div>}<small>{artifact?.mime === 'image/svg+xml' ? 'Vetor editável e escalável sem perda.' : exportFormat === 'png' ? 'Sem perdas e com transparência preservada.' : exportFormat === 'jpeg' ? 'Arquivo compacto com fundo branco e qualidade 95.' : 'Arquivo compacto Q95, preservando transparência.'}</small></div>}

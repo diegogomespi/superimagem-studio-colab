@@ -42,6 +42,8 @@ body:has(.upscale-only){overflow:auto;background:#090a0f;min-width:0}
 .upscale-only .scale-grid.three button{padding:7px 4px}
 .upscale-only .scale-grid button b{font-size:18px;margin:0}
 .upscale-only .segmented button{padding:8px 5px;font-size:12px}
+.model-options{display:grid!important;grid-template-columns:1fr 1fr}
+.model-options button:last-child{grid-column:1/-1}
 .upscale-only .output-summary{padding-block:9px}
 .upscale-only .dimension{margin:0}
 .active-version{background:#111219}
@@ -102,6 +104,11 @@ body:has(.upscale-only){overflow:auto;background:#090a0f;min-width:0}
 .download-menu>button{width:calc(100% - 12px);margin:6px;min-height:35px!important}
 .upscale-only .workspace-toolbar{padding:8px 14px;gap:8px}
 .upscale-only .workspace-toolbar button{padding:8px 10px;font-size:12px}
+.compact-active-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.compact-active-head>label{font-size:9px;color:#8c8c98;font-weight:800;letter-spacing:.8px}
+.history-nav{display:flex;gap:4px}
+.history-nav button{width:32px;height:32px;padding:0!important;border-radius:8px!important;font-size:17px!important;color:#d4d5dc!important}
+.history-nav button:disabled{opacity:.28;cursor:not-allowed}
 .upscale-only .background-switch{margin-left:auto}
 .upscale-only .canvas{margin:12px;border-radius:13px;cursor:default;overscroll-behavior:contain;touch-action:none}
 .upscale-only .canvas.pannable{cursor:grab}

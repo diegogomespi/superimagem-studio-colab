@@ -24,7 +24,7 @@ export interface JobOptions {
   maskContrast?: number;
   profile?: Profile;
   scale?: 2 | 4 | 8;
-  upscaleModel?: 'general' | 'illustration';
+  upscaleModel?: 'general' | 'illustration' | 'vector-refine';
   detailMode?: 'faithful' | 'detailed';
   backgroundEngine?: 'birefnet-hr' | 'ben2';
   refineEdges?: boolean;

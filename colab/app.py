@@ -56,6 +56,14 @@ MODEL_SPECS = {
         'sha256': 'f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da',
         'blocks': 6,
     },
+    'vector-refine': {
+        'name': 'SwinIR-M_classical_DF2K_x4',
+        'url': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x4.pth',
+        'file': '001_classicalSR_DF2K_s64w8_SwinIR-M_x4.pth',
+        'sha256': '4e78e33f22c1aa8a773db0cf4a7381bae97c2362c717f155439ebc690cbd9215',
+        # Carregado somente quando escolhido para não atrasar a abertura normal.
+        'preload': False,
+    },
 }
 
 BUILD_VERSION = os.environ.get('SUPERIMAGEM_BUILD_VERSION', 'desenvolvimento')
@@ -99,7 +107,11 @@ def version_identity(source: dict[str, Any]) -> tuple[str, int]:
 def processed_filename(original: str, scale: int, model_kind: str, detail_mode: str, extension: str = 'png') -> str:
     stem = Path(original).stem
     stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', stem).strip(' .')[:140] or 'imagem'
-    model_tag = 'RealESRGAN-x4plus' if model_kind == 'general' else 'RealESRGAN-anime-6B'
+    model_tag = {
+        'general': 'RealESRGAN-x4plus',
+        'illustration': 'RealESRGAN-anime-6B',
+        'vector-refine': 'SwinIR-classical-x4',
+    }.get(model_kind, 'IA-x4')
     mode_tag = f"_{'detalhado' if detail_mode == 'detailed' else 'fiel'}" if scale == 8 else ''
     return f'{stem}_upscale-{scale}x_{model_tag}{mode_tag}.{extension}'
 
@@ -365,6 +377,8 @@ def prepare_models() -> dict[str, Any]:
         raise HTTPException(503, 'GPU CUDA não encontrada.')
     ready = []
     for kind, spec in MODEL_SPECS.items():
+        if spec.get('preload') is False:
+            continue
         state: dict[str, Any] = {}
         descriptor = get_model(kind, state)
         model_path = MODELS_DIR / spec['file']

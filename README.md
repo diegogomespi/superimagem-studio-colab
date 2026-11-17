@@ -8,6 +8,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 
 - RealESRGAN x4plus oficial para fotos e uso geral.
 - RealESRGAN x4plus Anime 6B para ilustrações e estampas.
+- SwinIR Classical x4 oficial em `Refinar logo / letras`, para recuperação mais fiel de bordas e texto antes da vetorização.
 - BiRefNet HR-Matting como removedor principal e BEN2 como alternativa refinada, ambos carregados sob demanda.
 - Limpeza independente para foto/ilustração e limpeza do canal alpha.
 - Conversão P&B independente com limiar adaptativo, Otsu ou manual.
@@ -25,6 +26,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 - Escolha explícita entre PNG sem perdas, WebP Q95 com transparência e JPEG Q95 sempre com fundo branco.
 - Histórico de versões: cada resultado vira automaticamente a entrada ativa da próxima operação, sem alterar a imagem original.
 - Voltar uma etapa, restaurar a original, selecionar qualquer versão anterior e baixar a versão ativa a qualquer momento.
+- Setas pequenas de voltar/avançar em cada ferramenta, sem ocupar o visualizador nem apagar ramificações.
 - Ramificações reais: uma nova operação usa exatamente a versão escolhida como pai, mesmo que ela não seja a última da lista.
 - Exclusão segura de versões: a original é protegida e uma versão com resultados derivados só pode ser apagada depois das versões-filhas.
 - Aba `Histórico` inspirada no painel do Photoshop, com histórico não linear sempre ativo, descrições das operações e gráfico compacto das ramificações.
@@ -39,7 +41,7 @@ Este repositório é independente do `superimagem-colab`, que permanece como a v
 3. Execute a única célula **INICIAR SUPERIMAGEM GPU T4**.
 4. Ao terminar, clique em **ABRIR SUPERIMAGEM EM NOVA ABA**. A interface não ocupa o notebook.
 
-Na inicialização são validados os dois pesos pequenos do upscale. BiRefNet HR e BEN2 são maiores e baixam somente na primeira vez em que o motor é escolhido. Arquivos enviados, pesos baixados e resultados ficam no armazenamento temporário da sessão do Colab.
+Na inicialização são validados os dois pesos pequenos do upscale comum. SwinIR Classical, BiRefNet HR e BEN2 são baixados sob demanda somente na primeira vez em que cada motor é escolhido. O peso oficial do SwinIR tem aproximadamente 65 MiB. Arquivos enviados, pesos baixados e resultados ficam no armazenamento temporário da sessão do Colab.
 
 ## Validação
 
