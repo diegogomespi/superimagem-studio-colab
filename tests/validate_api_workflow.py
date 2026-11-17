@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 sys.modules['torch']=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:False))
 sys.modules['spandrel']=SimpleNamespace(ModelLoader=object)
-from colab.app import app
+from colab.app import app, jobs, job_futures
+from concurrent.futures import Future
 
 
 def main():
@@ -43,6 +44,15 @@ def main():
         assert response.status_code==200,response.text
         assert client.get('/api/artifacts/'+original['id']).status_code==200
         assert client.post('/api/artifacts/delete-batch',json={'ids':[original['id']]}).status_code==400
+        jobs['ghost']=dict(id='ghost',artifactId=original['id'],status='processing',phase='inference')
+        assert client.get('/api/jobs/active').json()['job'] is None
+        assert jobs['ghost']['status']=='interrupted'
+        jobs['live']=dict(id='live',artifactId=original['id'],status='processing',phase='reconstructing_logo')
+        live=Future();live.set_running_or_notify_cancel();job_futures['live']=live
+        assert client.get('/api/jobs/active').json()['job']['id']=='live'
+        blocked=client.post('/api/jobs',json={'artifactId':original['id'],'operation':'black-white'})
+        assert blocked.status_code==409 and blocked.json()['activeJob']['id']=='live'
+        jobs['live']['status']='done';live.set_result(None)
         print('OK: API HTTP real, upload, P&B, pincel, métricas, dependências e exclusão atômica de ramo. CUDA não testada.')
 
 

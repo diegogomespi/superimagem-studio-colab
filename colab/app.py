@@ -25,7 +25,7 @@ import numpy as np
 import psutil
 import torch
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
@@ -76,6 +76,7 @@ BUILD_VERSION = os.environ.get('SUPERIMAGEM_BUILD_VERSION', 'desenvolvimento')
 app = FastAPI(title='SuperImagem GPU T4', version=BUILD_VERSION)
 artifacts: dict[str, dict[str, Any]] = {}
 jobs: dict[str, dict[str, Any]] = {}
+job_futures: dict[str, Any] = {}
 executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='superimagem-gpu')
 active_lock = threading.Lock()
 models: dict[str, Any] = {}
@@ -454,7 +455,7 @@ def process_job(job_id: str) -> None:
                 options={**options,'denoise':min(35,round(noise*3)),'sharpness':int(options.get('sharpness',25))}
                 print(f'[MELHORAR] modo={options.get("enhanceMode")} | ruído={noise:.2f} | redução={options["denoise"]}% | generativo={generative}',flush=True)
             if generative:
-                if operation not in ('upscale', 'black-white'):
+                if operation not in ('upscale', 'black-white', 'reconstruct'):
                     raise ValueError('Reconstrução IA disponível em Ampliar e Preto e branco.')
                 models.clear()
                 release_optional_models()
@@ -466,12 +467,18 @@ def process_job(job_id: str) -> None:
                     restore(Path(source['path']),reconstructed,options,job,ROOT)
                 else:
                     from colab.generative import reconstruct
-                    reconstruct(Path(source['path']), reconstructed, job, ROOT)
+                    reconstruct(Path(source['path']), reconstructed, job, ROOT, text=options.get('logoText',''))
                 image = cv2.imdecode(np.fromfile(reconstructed, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if image is None:
                     raise RuntimeError('A imagem produzida pelo FLUX não abriu corretamente.')
                 has_alpha = False
-            if operation == 'upscale':
+            if operation == 'reconstruct':
+                if not generative:
+                    raise ValueError('Ative Usar IA na aba IA para recriar. Para preservar letras use Ampliar ou P&B.')
+                output=image
+                model_id='Reconstrucao'
+                filename=operation_filename(source['filename'],operation,model_id)
+            elif operation == 'upscale':
                 scale = int(options.get('scale', 4))
                 if scale not in (2, 4, 8):
                     raise ValueError('Use ampliação 2×, 4× ou 8×.')
@@ -681,22 +688,42 @@ def delete_artifact(artifact_id: str) -> dict[str, Any]:
 
 @app.post('/api/jobs', status_code=202)
 async def create_job(request: JobRequest) -> dict[str, Any]:
+    if request.options.get('useAI') and request.operation!='reconstruct':
+        raise HTTPException(400,'A reconstrução foi movida para a aba IA. Atualize a página antes de continuar.')
     gpu_operations = ('upscale', 'remove-background')
     if (request.operation in gpu_operations or request.options.get('useAI')) and not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada. No Colab, selecione um ambiente T4.')
-    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize', 'mask-correct')
+    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize', 'mask-correct', 'reconstruct')
     if request.operation not in allowed or request.artifactId not in artifacts:
         raise HTTPException(400, 'Imagem ou operação inválida.')
     if artifacts[request.artifactId].get('candidate'):
         raise HTTPException(409, 'Aceite ou descarte a reconstrução antes de iniciar outra operação.')
-    if any(j['status'] in ('queued', 'preparing', 'loading_model', 'processing', 'encoding', 'cancelling') for j in jobs.values()):
-        raise HTTPException(409, 'Aguarde o trabalho atual terminar.')
+    blocking = active_job()
+    if blocking:
+        return JSONResponse(status_code=409,content={'detail':f'Tarefa {blocking["id"]} em andamento: {blocking["phase"]}. Acompanhe ou cancele essa tarefa.', 'activeJob':blocking})
     job_id = new_id('job')
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     job = {'id': job_id, 'artifactId': request.artifactId, 'operation': request.operation, 'options': request.options, 'status': 'queued', 'phase': 'queued', 'progress': None, 'resultArtifactId': None, 'error': None, 'createdAt': now, 'updatedAt': now}
     jobs[job_id] = job
-    asyncio.get_running_loop().run_in_executor(executor, process_job, job_id)
+    job['startedAtEpoch']=time.time()
+    job_futures[job_id]=asyncio.get_running_loop().run_in_executor(executor, process_job, job_id)
     return job
+
+
+def active_job():
+    for item in list(jobs.values()):
+        if item['status'] not in ('done','error','cancelled','interrupted'):
+            future=job_futures.get(item['id'])
+            if future is None or future.done():
+                item.update(status='interrupted',phase='interrupted',error={'code':'WORKER_ENDED','message':'A execução terminou sem resultado. Você pode iniciar novamente.'})
+                continue
+            return item
+    return None
+
+
+@app.get('/api/jobs/active')
+def get_active_job():
+    return {'job':active_job()}
 
 
 @app.post('/api/artifacts/{artifact_id}/accept')

@@ -1,4 +1,4 @@
-export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize' | 'mask-correct';
+export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize' | 'mask-correct' | 'reconstruct';
 export type Profile = 'economy' | 'balanced';
 export type JobStatus = 'queued' | 'preparing' | 'loading_model' | 'processing' | 'encoding' | 'done' | 'cancelling' | 'cancelled' | 'error' | 'interrupted';
 
@@ -26,6 +26,7 @@ export interface ArtifactInfo {
 export interface JobOptions {
   useAI?: boolean;
   restorationEngine?: 'flux' | 'diffbir';
+  logoText?: string;
   enhanceMode?: 'faithful' | 'reconstruct' | 'photo';
   enhance?: boolean;
   prepareBW?: boolean;
@@ -63,6 +64,8 @@ export interface JobOptions {
 }
 
 export interface JobRecord {
+  startedAtEpoch?: number;
+  heartbeatEpoch?: number;
   candidateArtifactIds?: string[];
   warnings?: string[];
   id: string;

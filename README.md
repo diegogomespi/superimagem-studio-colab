@@ -47,7 +47,7 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 
 ### Atualização: Usar IA e logs sob demanda
 
-- Ampliar e Preto e branco têm a caixa `Usar IA`, desligada por padrão.
+- A reconstrução generativa foi separada na aba `IA`, com a caixa `Usar IA` desligada por padrão. Ampliar/P&B não executam geradores.
 - Ligada, solicita reconstrução raster com FLUX.2 Klein 4B, em ambiente Python separado. Instalação e pesos são obtidos somente no primeiro uso; a primeira execução pode demorar bastante.
 - A integração FLUX é experimental: ainda não executada numa T4 deste projeto. Usa NF4 com cálculo FP16; erros são registrados e não desativam os motores convencionais.
 - O resultado generativo exige Aceitar ou Descartar antes de continuar. O original permanece disponível. FLUX retorna RGB com fundo branco, não SVG nem alpha inferido. Confira letras e geometria manualmente.
@@ -59,6 +59,9 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 - Log do Colab abre expandido, preserva até 3000 linhas recentes e mostra saída não silenciosa do pip; logs dos workers incluem também as últimas linhas antes do encerramento.
 - Evolução: adaptadores opcionais de DiffBIR/Finegrain/FeyNoBg/Lucida/ViTMatte, pincéis, Inkvec, métricas e histórico múltiplo implementados. Motores CUDA novos ainda experimentais, aguardando inferência real. SDMatte foi avaliado e continua condicionado a benchmark antes de incorporar.
 - Estado detalhado dos 16 itens, versões e procedimento de teste: [ENTREGA_16_ITENS.md](ENTREGA_16_ITENS.md). Código integrado não equivale a aprovação de qualidade na T4/CorelDRAW.
+- Aba IA gera candidato no tamanho da entrada sem executar upscale em seguida. FLUX recebe referência proporcional com margem; o quadro é restaurado ao tamanho original. Isso corrige o encaixe, mas não impede que o modelo altere letras/desenhos.
+- Tarefas ativas são recuperadas por `/api/jobs/active`; 409 inclui a tarefa que bloqueou a solicitação. Uma tarefa só é liberada como interrompida quando sua execução não existe ou já terminou, nunca apenas por estar lenta.
+- Painel central mostra etapa, tempo, heartbeat, cancelamento e porcentagem dos passos quando disponível. Downloads/codificação sem progresso mensurável ficam indeterminados; não há porcentagem fictícia.
 
 - TypeScript estrito e build Vite.
 - Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.

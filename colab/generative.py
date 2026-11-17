@@ -4,22 +4,37 @@ import subprocess
 import sys
 import time
 import venv
+import json
 from pathlib import Path
 
 
 def run_checked(command, job, log, cwd=None, env=None):
+    pending=''
+    began=time.monotonic()
     offset = log.stat().st_size if log.exists() else 0
     with log.open('a', encoding='utf-8') as output:
         print(f'[PROCESSO] Iniciando: {Path(command[0]).name} | log {log.name}',flush=True)
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, cwd=cwd, env=env)
         try:
             while process.poll() is None:
+                job['heartbeatEpoch']=time.time()
                 with log.open('r', encoding='utf-8', errors='replace') as reader:
                     reader.seek(offset)
                     chunk = reader.read()
                     offset = reader.tell()
                 if chunk:
                     print(chunk, end='', flush=True)
+                    pending+=chunk
+                    lines=pending.split('\n');pending=lines.pop()
+                    for line in lines:
+                        if line.startswith('SUPERIMAGEM_PROGRESS '):
+                            try:
+                                state=json.loads(line.split(' ',1)[1])
+                                job['phase']=state['phase']
+                                job['progress']=state.get('progress')
+                            except (ValueError,KeyError):pass
+                if time.monotonic()-began>2700:
+                    raise RuntimeError('A etapa excedeu 45 minutos e foi interrompida. Consulte o log para identificar a causa.')
                 if job.get('cancelRequested'):
                     raise InterruptedError('Processamento cancelado.')
                 time.sleep(0.25)
@@ -41,7 +56,7 @@ def run_checked(command, job, log, cwd=None, env=None):
                     process.wait()
 
 
-def reconstruct(source: Path, target: Path, job: dict, root: Path):
+def reconstruct(source: Path, target: Path, job: dict, root: Path, text=''):
     environment = root / 'colab' / '.flux-env'
     python = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     marker = environment / '.ready-v1'
@@ -60,6 +75,6 @@ def reconstruct(source: Path, target: Path, job: dict, root: Path):
         marker.touch()
     job.update(status='processing', phase='reconstructing_logo')
     run_checked([str(python), str(root / 'colab' / 'flux_worker.py'),
-                 '--input', str(source), '--output', str(target)], job, log)
+                 '--input', str(source), '--output', str(target), '--text', str(text)[:300]], job, log)
     if not target.exists():
         raise RuntimeError('FLUX não produziu a imagem esperada.')

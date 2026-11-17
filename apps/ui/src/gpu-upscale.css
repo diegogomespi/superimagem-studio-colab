@@ -114,6 +114,12 @@ body:has(.upscale-only){overflow:auto;background:#090a0f;min-width:0}
 .side-panel .field>button:disabled{opacity:.4;cursor:not-allowed}
 .side-panel .field>select{display:block;width:100%;min-width:0;padding:9px 7px;margin:6px 0;border:1px solid #363944;border-radius:8px;background:#171922;color:#e5e7ee;font-size:12px}
 .side-panel .field>summary{font-size:12px;cursor:pointer}
+.workspace{position:relative}
+.processing-overlay{position:absolute;inset:0;z-index:50;display:grid;place-items:center;background:#090b1099;backdrop-filter:blur(2px)}
+.processing-card{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:420px;padding:28px;border:1px solid #ff684a66;border-radius:16px;background:#151720;color:#eee;text-align:center;box-shadow:0 16px 60px #0008}
+.processing-card button{padding:10px 18px;border:1px solid #94472f;border-radius:8px;background:#301b16;color:#ffbba0;cursor:pointer}
+.processing-spinner{width:36px;height:36px;border:3px solid #363944;border-top-color:#ff684a;border-radius:50%;animation:processing-spin .9s linear infinite}
+@keyframes processing-spin{to{transform:rotate(360deg)}}
 .upscale-only .background-switch{margin-left:auto}
 .upscale-only .canvas{margin:12px;border-radius:13px;cursor:default;overscroll-behavior:contain;touch-action:none}
 .upscale-only .canvas.pannable{cursor:grab}
