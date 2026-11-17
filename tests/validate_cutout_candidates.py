@@ -1,5 +1,6 @@
 """Teste de orquestração A/B com motores substitutos; não avalia os pesos CUDA."""
 import ast
+import sys
 import tempfile
 import threading
 import time
@@ -12,6 +13,7 @@ import numpy as np
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0,str(root))
     tree = ast.parse((root / 'colab/app.py').read_text(encoding='utf-8'))
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'process_job')
     with tempfile.TemporaryDirectory() as directory:

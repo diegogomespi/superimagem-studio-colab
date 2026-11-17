@@ -15,6 +15,9 @@ REQUIREMENTS = {
 
 
 def segment(source, target, engine, options, job, root, mask=None):
+    if engine == 'finegrain':
+        from colab.cutout_options import validate_boxes
+        validate_boxes(options.get('boxes'))
     if engine not in REQUIREMENTS:
         raise ValueError('Motor opcional inválido.')
     environment = root / 'colab' / f'.optional-{engine}'
@@ -34,7 +37,13 @@ def segment(source, target, engine, options, job, root, mask=None):
     if mask:
         command += ['--mask', str(mask)]
     try:
-        run_checked(command, job, log)
+        try:
+            run_checked(command, job, log)
+        except RuntimeError as exc:
+            import re
+            messages = re.findall(r'^(?:ValueError|RuntimeError|ImportError|ModuleNotFoundError|OSError): (.+)$', str(exc), re.M)
+            detail = messages[-1] if messages else 'Consulte o log completo no Colab.'
+            raise RuntimeError(f'{engine}: {detail}') from exc
     finally:
         configuration.unlink(missing_ok=True)
     if not target.exists():

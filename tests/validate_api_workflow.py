@@ -34,6 +34,8 @@ def main():
         response=client.post('/api/artifacts',files={'file':('logo.png',io.BytesIO(encoded.tobytes()),'image/png')})
         assert response.status_code==200,response.text
         original=response.json()
+        missing_box=client.post('/api/jobs',json={'artifactId':original['id'],'operation':'remove-background','options':{'backgroundEngine':'finegrain','boxes':[]}})
+        assert missing_box.status_code==400 and 'arraste' in missing_box.text
         cuda.is_available=lambda:True
         oversized={**original,'id':'oversized-test','width':10048,'height':10064}
         artifacts[oversized['id']]=oversized
@@ -58,6 +60,25 @@ def main():
         cleaned=process(original['id'],'clean',{'cleanStyle':'illustration','cleanStrength':100,'cleanDenoise':40,'cleanContrast':30,'cleanSharpness':25,'cleanEdges':50})
         assert cleaned['engine']=='OpenCV-clean-illustration-v2',cleaned
         assert (cleaned['width'],cleaned['height'])==(original['width'],original['height'])
+        # Caminho HTTP da montagem/pacote; inferência substituída explicitamente.
+        import zipfile
+        import colab.cutout_benchmark as benchmark
+        real_benchmark=benchmark.run_benchmark
+        def fake_benchmark(source,destination,options,job,root):
+            cv2.imwrite(str(destination),np.full((64,128,3),110,np.uint8))
+            with zipfile.ZipFile(destination.with_suffix('.zip'),'w') as archive:archive.writestr('report.json','{}')
+            return {'tests':[{'id':'fey','status':'ok'}]}
+        benchmark.run_benchmark=fake_benchmark
+        cuda.is_available=lambda:True
+        cuda.empty_cache=lambda:None
+        try:
+            montage=process(original['id'],'cutout-test',{'testPresets':['fey']})
+            assert montage['operation']=='cutout-test' and montage['width']==128
+            response=client.get('/api/artifacts/'+montage['id']+'/download?format=zip')
+            assert response.status_code==200 and response.headers['content-type']=='application/zip'
+        finally:
+            cuda.is_available=lambda:False
+            benchmark.run_benchmark=real_benchmark
         # Exclusão em lote valida dependências antes de apagar qualquer item.
         response=client.post('/api/artifacts/delete-batch',json={'ids':[second['id']]})
         assert response.status_code==409,response.text

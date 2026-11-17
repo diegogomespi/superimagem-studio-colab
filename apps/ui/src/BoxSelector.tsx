@@ -1,8 +1,22 @@
 import React, {useRef,useState} from 'react';
-export function BoxSelector({url,onApply,onClose}:{url:string;onApply:(boxes:number[][])=>void;onClose:()=>void}){
+export function BoxSelector({url,onApply,onClose,purpose='object'}:{purpose?:'object'|'inspection';url:string;onApply:(boxes:number[][])=>void;onClose:()=>void}) {
   const [boxes,setBoxes]=useState<number[][]>([]);
   const [draft,setDraft]=useState<number[]|null>(null);
   const start=useRef<number[]|null>(null);
-  const point=(event:React.PointerEvent<HTMLDivElement>)=>{const rect=event.currentTarget.getBoundingClientRect();return [Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))];};
-  return <div style={{position:'fixed',inset:0,zIndex:1000,background:'#090b10',padding:20,overflow:'auto'}}><h2>Selecionar objeto · desenhe caixas</h2><p>Selecione a pessoa ou objeto desejado. O Finegrain usa a área indicada com uma pequena margem.</p><button onClick={()=>setBoxes(items=>items.slice(0,-1))}>Remover última caixa</button><button onClick={()=>setBoxes([])}>Limpar</button><button disabled={!boxes.length} onClick={()=>onApply(boxes)}>Usar {boxes.length} regiões</button><button onClick={onClose}>Cancelar</button><div style={{position:'relative',width:'fit-content',maxWidth:'100%',touchAction:'none',cursor:'crosshair'}} onPointerDown={event=>{start.current=point(event);event.currentTarget.setPointerCapture(event.pointerId);}} onPointerMove={event=>{if(start.current){const p=point(event);setDraft([Math.min(p[0],start.current[0]),Math.min(p[1],start.current[1]),Math.max(p[0],start.current[0]),Math.max(p[1],start.current[1])]);}}} onPointerUp={()=>{if(draft&&draft[2]-draft[0]>.005&&draft[3]-draft[1]>.005)setBoxes(items=>[...items,draft].slice(0,20));start.current=null;setDraft(null);}}><img src={url} draggable={false} style={{display:'block',maxWidth:'100%',maxHeight:'75vh',pointerEvents:'none'}}/>{[...boxes,...(draft?[draft]:[])].map((box,index)=><div key={index} style={{position:'absolute',left:`${box[0]*100}%`,top:`${box[1]*100}%`,width:`${(box[2]-box[0])*100}%`,height:`${(box[3]-box[1])*100}%`,border:'2px solid #ff684a',background:'#ff684a22',pointerEvents:'none'}}/>)}</div></div>;
+  const point=(event:React.PointerEvent<HTMLDivElement>)=>{
+    const rect=event.currentTarget.getBoundingClientRect();
+    return [Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))];
+  };
+  const region=(end:number[])=>start.current?[Math.min(end[0],start.current[0]),Math.min(end[1],start.current[1]),Math.max(end[0],start.current[0]),Math.max(end[1],start.current[1])]:null;
+  return <div className="box-modal" role="dialog" aria-modal="true" aria-label="Selecionar objeto para recorte">
+    <header><div><h2>{purpose==='inspection'?'Área de comparação':'Selecionar objeto'}</h2><p>{purpose==='inspection'?'Arraste uma caixa ao redor do cabelo ou detalhe que deseja comparar. A primeira região será mostrada em todos os quadros da montagem; a imagem inteira será processada.':'Clique e arraste do canto superior ao inferior do objeto. Inclua cabelo, mãos e toda a logo. A caixa orienta o Finegrain; ela não é o contorno final.'}</p></div><button onClick={onClose}>✕ Fechar</button></header>
+    <div className="box-workarea"><div className="box-image" onPointerDown={event=>{if(event.button!==0||boxes.length>=20)return;start.current=point(event);event.currentTarget.setPointerCapture(event.pointerId);}}
+      onPointerMove={event=>{if(start.current)setDraft(region(point(event)));}}
+      onPointerUp={event=>{const box=region(point(event));if(box&&box[2]-box[0]>.005&&box[3]-box[1]>.005)setBoxes(items=>[...items,box].slice(0,20));start.current=null;setDraft(null);}}
+      onPointerCancel={()=>{start.current=null;setDraft(null);}}>
+      <img src={url} alt="Arraste para indicar o objeto que deseja manter" draggable={false}/>
+      {[...boxes,...(draft?[draft]:[])].map((box,index)=><div key={index} className="box-region" style={{left:`${box[0]*100}%`,top:`${box[1]*100}%`,width:`${(box[2]-box[0])*100}%`,height:`${(box[3]-box[1])*100}%`}}><span>{index+1}</span></div>)}
+    </div></div>
+    <footer><span>{boxes.length?`${boxes.length} região(ões) selecionada(s)`:'Nenhuma seleção: arraste sobre a imagem para começar.'}</span><button disabled={!boxes.length} onClick={()=>setBoxes(items=>items.slice(0,-1))}>↶ Desfazer caixa</button><button disabled={!boxes.length} onClick={()=>setBoxes([])}>Limpar</button><button className="box-apply" disabled={!boxes.length} onClick={()=>onApply(boxes)}>Usar seleção</button></footer>
+  </div>;
 }

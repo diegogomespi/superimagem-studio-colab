@@ -90,6 +90,8 @@ def main():
                 core=local[top-y0:bottom-y0,left-x0:right-x0]
                 unknown=trimap[top:bottom,left:right]==128
                 alpha[top:bottom,left:right][unknown]=core[unknown]
+        changed=np.count_nonzero(alpha != mask)
+        print(f'[VITMATTE] pixels alterados {changed}/{mask.size} | diferença média alpha {np.abs(alpha.astype(float)-mask).mean():.3f}/255 | compare bordas antes/depois; não é uma nota de qualidade',flush=True)
     Image.fromarray(alpha,'L').save(args.output)
     print(f'[GPU] Pico alocado {torch.cuda.max_memory_allocated()/1024**3:.2f} GiB',flush=True)
     print(f'[MODELO] {args.engine}: máscara salva na resolução {width}x{height}',flush=True)

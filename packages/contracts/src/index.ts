@@ -1,4 +1,4 @@
-export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize' | 'mask-correct' | 'reconstruct';
+export type Tool = 'remove-background' | 'upscale' | 'clean' | 'black-white' | 'vectorize' | 'mask-correct' | 'reconstruct' | 'cutout-test';
 export type Profile = 'economy' | 'balanced';
 export type JobStatus = 'queued' | 'preparing' | 'loading_model' | 'processing' | 'encoding' | 'done' | 'cancelling' | 'cancelled' | 'error' | 'interrupted';
 
@@ -40,6 +40,7 @@ export interface JobOptions {
   denoise?: number;
   sharpness?: number;
   backgroundEngine?: 'auto' | 'birefnet-hr' | 'ben2' | 'hybrid' | 'finegrain' | 'fey' | 'lucida';
+  cutoutSubject?: 'general' | 'logo' | 'person';
   analysisContrast?: boolean;
   advancedMatting?: boolean;
   quality?: 'normal' | 'detailed' | 'max';
@@ -69,6 +70,8 @@ export interface JobOptions {
 }
 
 export interface JobRecord {
+  testIndex?: number;
+  testCount?: number;
   startedAtEpoch?: number;
   heartbeatEpoch?: number;
   candidateArtifactIds?: string[];

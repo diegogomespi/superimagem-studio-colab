@@ -384,6 +384,19 @@ def process_job(job_id: str) -> None:
             job.update(status='preparing', phase='preparing')
             operation = job['operation']
             total = 1
+            if operation == 'cutout-test':
+                from colab.cutout_benchmark import run_benchmark
+                models.clear()
+                release_optional_models()
+                result_id = new_id('tests')
+                path = ARTIFACTS_DIR / f'{result_id}.png'
+                report = run_benchmark(Path(source['path']),path,options,job,ROOT)
+                montage = cv2.imread(str(path))
+                ph,pw = montage.shape[:2]
+                preview_path = create_preview(montage, ARTIFACTS_DIR/f'{result_id}-preview.png')
+                artifacts[result_id] = dict(id=result_id,filename='comparacao-recortes.png',mime='image/png',width=pw,height=ph,hasAlpha=False,path=str(path),previewPath=str(preview_path),parentId=source['id'],operation='cutout-test',options=options,engine='Bateria de recortes',benchmarkReport=report,benchmarkZip=str(path.with_suffix('.zip')))
+                job.update(status='done',phase='done',resultArtifactId=result_id,progress={'completedTiles':1,'totalTiles':1})
+                return
             if operation == 'vectorize':
                 result_id = new_id('svg')
                 output_path = ARTIFACTS_DIR / f'{result_id}.svg'
@@ -412,7 +425,8 @@ def process_job(job_id: str) -> None:
             if operation == 'remove-background' and options.get('backgroundEngine') == 'auto':
                 candidate_ids = []
                 failures = []
-                for engine in ('ben2', 'birefnet-hr'):
+                from colab.cutout_options import candidate_engines
+                for engine in candidate_engines(options):
                     if job.get('cancelRequested'):
                         raise InterruptedError('Processamento cancelado.')
                     models.clear()
@@ -420,7 +434,17 @@ def process_job(job_id: str) -> None:
                     print(f'[RECORTE A/B] Executando {engine} sobre a mesma entrada {source["id"]}', flush=True)
                     try:
                         candidate_options = {**options, 'backgroundEngine': engine}
-                        cutout, engine_name = remove_background(image.copy(), candidate_options, job)
+                        if engine == 'fey':
+                            from colab.optional_models import segment
+                            mask_path = ARTIFACTS_DIR / f'{new_id("fey-mask")}.png'
+                            segment(Path(source['path']), mask_path, engine, candidate_options, job, ROOT)
+                            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                            if mask is None or mask.shape != image.shape[:2]:
+                                raise ValueError('FeyNoBg retornou máscara inválida.')
+                            if has_alpha: mask = np.minimum(mask, image[:,:,3])
+                            cutout, engine_name = np.dstack((image[:,:,:3], mask)), 'FeyNoBg'
+                        else:
+                            cutout, engine_name = remove_background(image.copy(), candidate_options, job)
                         if options.get('advancedMatting'):
                             release_optional_models()
                             from colab.optional_models import segment
@@ -710,16 +734,28 @@ def delete_artifact(artifact_id: str) -> dict[str, Any]:
 
 @app.post('/api/jobs', status_code=202)
 async def create_job(request: JobRequest) -> dict[str, Any]:
+    if request.operation == 'remove-background' and request.options.get('backgroundEngine') == 'finegrain':
+        from colab.cutout_options import validate_boxes
+        try:
+            validate_boxes(request.options.get('boxes'))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
     if request.options.get('useAI') and request.operation!='reconstruct':
         raise HTTPException(400,'A reconstrução foi movida para a aba IA. Atualize a página antes de continuar.')
-    gpu_operations = ('upscale', 'remove-background')
+    gpu_operations = ('upscale', 'remove-background', 'cutout-test')
     if (request.operation in gpu_operations or request.options.get('useAI')) and not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada. No Colab, selecione um ambiente T4.')
-    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize', 'mask-correct', 'reconstruct')
+    allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize', 'mask-correct', 'reconstruct', 'cutout-test')
     if request.operation not in allowed or request.artifactId not in artifacts:
         raise HTTPException(400, 'Imagem ou operação inválida.')
     if artifacts[request.artifactId].get('candidate'):
         raise HTTPException(409, 'Aceite ou descarte a reconstrução antes de iniciar outra operação.')
+    if request.operation == 'cutout-test':
+        from colab.cutout_benchmark import validate_presets
+        try:
+            validate_presets(request.options.get('testPresets'))
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from exc
     if request.operation == 'upscale':
         if request.options.get('upscaleModel') == 'logos':
             request.options['detailMode'] = 'faithful'
@@ -819,6 +855,11 @@ def preview(artifact_id: str, full: bool = False, inspection: bool = False) -> F
 
 @app.get('/api/artifacts/{artifact_id}/download')
 def download_artifact(artifact_id: str, format: str = 'png', background: str = '#ffffff') -> FileResponse:
+    if format == 'zip':
+        item = artifacts.get(artifact_id)
+        if not item or not item.get('benchmarkZip'):
+            raise HTTPException(404,'Pacote de testes não encontrado.')
+        return FileResponse(item['benchmarkZip'],media_type='application/zip',filename='comparacao-recortes.zip')
     item = artifacts.get(artifact_id)
     if not item:
         raise HTTPException(404, 'Imagem não encontrada.')
