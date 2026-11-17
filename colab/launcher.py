@@ -15,6 +15,7 @@ from IPython.display import HTML, display
 LOGS: list[str] = []
 DISPLAY_HANDLE = None
 SERVER = None
+LAST_DISPLAY: dict = {}
 
 
 def _append(message: object) -> None:
@@ -69,6 +70,7 @@ def _render(stage: str, detail: str, progress: int, *, error: str = "", page_url
 
 def _update(stage: str, detail: str, progress: int, *, error: str = "", page_url: str = "") -> None:
     global DISPLAY_HANDLE
+    LAST_DISPLAY.update(stage=stage, detail=detail, progress=progress, error=error, page_url=page_url)
     content = HTML(_render(stage, detail, progress, error=error, page_url=page_url))
     if DISPLAY_HANDLE is None:
         DISPLAY_HANDLE = display(content, display_id=True)
@@ -94,6 +96,8 @@ def _consume_server_output(process: subprocess.Popen) -> None:
         return
     for line in process.stdout:
         _append(f"SERVIDOR: {line.rstrip()}")
+        if LAST_DISPLAY.get('page_url'):
+            _update(**LAST_DISPLAY.copy())
 
 
 def run_from_colab(
@@ -122,6 +126,7 @@ def run_from_colab(
             _run(["git", "clone", "--depth", "1", "--branch", branch, repo_url, project_dir], "Sincronizando GitHub", "Baixando o SuperImagem...", 20)
 
         commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=project_dir, text=True).strip()
+        _append(f'REPOSITÓRIO: {repo_url} | branch {branch} | commit {commit}')
         _append(f"VERSÃO GITHUB CARREGADA: {commit}")
 
         _run(
@@ -139,6 +144,7 @@ def run_from_colab(
         subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         server_env = os.environ.copy()
         server_env['SUPERIMAGEM_BUILD_VERSION'] = commit
+        server_env['PYTHONUNBUFFERED'] = '1'
         SERVER = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "colab.app:app", "--host", "0.0.0.0", "--port", str(port)],
             cwd=project_dir,
@@ -167,22 +173,24 @@ def run_from_colab(
             raise RuntimeError("O servidor não respondeu dentro de 90 segundos.")
 
         _append(f"Aplicação pronta: {health['gpu']['name']}")
-        _update("Baixando e validando modelos", "Conferindo os dois arquivos oficiais e carregando na GPU...", 86)
+        _update("Conferindo catálogo de modelos", "Modelos são baixados somente quando você usar a ferramenta.", 86)
         models_response = requests.post(f"http://127.0.0.1:{port}/api/models/prepare", timeout=900)
         models_response.raise_for_status()
         prepared = models_response.json()
-        if not prepared.get("ok") or len(prepared.get("models", [])) != 2:
-            raise RuntimeError("A validação não confirmou os dois modelos.")
+        if not prepared.get("ok"):
+            raise RuntimeError("O catálogo de modelos não respondeu corretamente.")
         for model in prepared["models"]:
             size_mb = model["bytes"] / 1024**2
             short_hash = model["sha256"][:12]
-            _append(f"MODELO VALIDADO: {model['name']} | {size_mb:.1f} MB | SHA-256 OK ({short_hash}...) | escala {model['scale']}x | GPU pronta")
+            state = 'cache validado; ainda não carregado na GPU' if model['status'] == 'cache_validated' else 'não solicitado; será baixado no primeiro uso'
+            _append(f"MODELO: {model['name']} | {state} | cache {size_mb:.1f} MiB | SHA esperado {short_hash}... | origem {model['url']}")
+        _append('OPCIONAIS: PramaLLC/BEN2, ZhengPeng7/BiRefNet_HR-matting e black-forest-labs/FLUX.2-klein-4B — sob demanda. FLUX experimental, ainda sem validação T4.')
 
         _update("Publicando página externa", "Gerando o endereço seguro da sessão...", 95)
         from google.colab import output
 
         page_url = output.eval_js(f"google.colab.kernel.proxyPort({port})")
-        _update("Sistema online!", f"Versão {health['version']} | GPU: {health['gpu']['name']} | 2 modelos baixados, validados e carregados", 100, page_url=page_url)
+        _update("Sistema online!", f"Versão {health['version']} | GPU: {health['gpu']['name']} | modelos sob demanda; acompanhe os downloads no log abaixo", 100, page_url=page_url)
     except Exception as exc:
         _append(f"ERRO: {type(exc).__name__}: {exc}")
         _update("Falha ao iniciar", "Abra o log completo para identificar a etapa.", 100, error=str(exc))

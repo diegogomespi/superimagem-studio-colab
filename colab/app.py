@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
-from colab.operations import black_white, clean_image, remove_background, vectorize
+from colab.operations import black_white, clean_image, remove_background, vectorize, release_optional_models
 from colab.enhancement import improve_raster
 
 # BasicSR antigo importa um módulo renomeado nas versões novas do torchvision.
@@ -104,7 +104,7 @@ def artifact_public(item: dict[str, Any]) -> dict[str, Any]:
 
 def version_identity(source: dict[str, Any]) -> tuple[str, int]:
     root_id = source.get('rootId', source['id'])
-    number = max((int(item.get('versionNumber', 1)) for item in artifacts.values() if item.get('rootId', item['id']) == root_id), default=1) + 1
+    number = max((int(item.get('versionNumber', 1)) for item in artifacts.values() if item.get('rootId', item['id']) == root_id and not item.get('candidate')), default=1) + 1
     return root_id, number
 
 
@@ -163,8 +163,10 @@ def sha256_file(path: Path) -> str:
 
 
 def download(url: str, target: Path, expected_sha256: str) -> None:
+    print(f'[MODELO] Origem: {url} | arquivo: {target.name}', flush=True)
     if target.exists() and target.stat().st_size > 1_000_000:
         if sha256_file(target) == expected_sha256:
+            print(f'[MODELO] CACHE VALIDADO: {target.name} | {target.stat().st_size / 1048576:.1f} MiB | SHA-256 OK', flush=True)
             return
         target.unlink(missing_ok=True)
     import urllib.request
@@ -175,13 +177,24 @@ def download(url: str, target: Path, expected_sha256: str) -> None:
         try:
             request = urllib.request.Request(url, headers={'User-Agent': 'SuperImagem-Colab/1.0'})
             with urllib.request.urlopen(request, timeout=120) as response, partial.open('wb') as output:
-                shutil.copyfileobj(response, output)
+                size = int(response.headers.get('Content-Length', 0))
+                received = 0
+                last_report = 0.0
+                while chunk := response.read(1024 * 1024):
+                    output.write(chunk)
+                    received += len(chunk)
+                    now = time.monotonic()
+                    if now - last_report >= 2:
+                        total_label = f' / {size / 1048576:.1f} MiB ({received * 100 / size:.0f}%)' if size else ' MiB (tamanho total não informado)'
+                        print(f'[DOWNLOAD] {target.name}: {received / 1048576:.1f}{total_label}', flush=True)
+                        last_report = now
             if partial.stat().st_size <= 1_000_000:
                 raise RuntimeError('O arquivo recebido está incompleto.')
             actual_sha256 = sha256_file(partial)
             if actual_sha256 != expected_sha256:
                 raise RuntimeError(f'Assinatura SHA-256 inválida: {actual_sha256}')
             partial.replace(target)
+            print(f'[MODELO] BAIXADO E VALIDADO: {target.name} | SHA-256 {expected_sha256}', flush=True)
             return
         except Exception as exc:
             last_error = exc
@@ -198,10 +211,13 @@ def get_model(kind: str, job: dict[str, Any]) -> Any:
     model_path = MODELS_DIR / spec['file']
     job['phase'] = 'loading_model'
     if kind not in models:
+        models.clear()
+        release_optional_models()
         download(spec['url'], model_path, spec['sha256'])
         descriptor = ModelLoader().load_from_file(str(model_path)).eval().cuda()
         if spec.get('precision', 'fp16') == 'fp16':
             descriptor = descriptor.half()
+        print(f'[GPU] CARREGADO: {spec["name"]} | {spec.get("precision", "fp16")} | escala {descriptor.scale}x', flush=True)
         if int(descriptor.scale) != 4:
             raise RuntimeError(f'Escala inesperada do modelo: {descriptor.scale}.')
         models[kind] = descriptor
@@ -310,6 +326,21 @@ def process_job(job_id: str) -> None:
                 raise ValueError('Não foi possível abrir a imagem raster. Para continuar após um SVG, volte para uma versão PNG.')
             has_alpha = image.ndim == 3 and image.shape[2] == 4
             height, width = image.shape[:2]
+            generative = bool(options.get('useAI', False))
+            if generative:
+                if operation not in ('upscale', 'black-white'):
+                    raise ValueError('Reconstrução IA disponível em Ampliar e Preto e branco.')
+                models.clear()
+                release_optional_models()
+                gc.collect()
+                torch.cuda.empty_cache()
+                from colab.generative import reconstruct
+                reconstructed = ARTIFACTS_DIR / f'{new_id("flux")}.png'
+                reconstruct(Path(source['path']), reconstructed, job, ROOT)
+                image = cv2.imdecode(np.fromfile(reconstructed, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if image is None:
+                    raise RuntimeError('A imagem produzida pelo FLUX não abriu corretamente.')
+                has_alpha = False
             if operation == 'upscale':
                 scale = int(options.get('scale', 4))
                 if scale not in (2, 4, 8):
@@ -333,7 +364,7 @@ def process_job(job_id: str) -> None:
                     del second4
                 else:
                     target_size = (width * scale, height * scale)
-                    rgb = first4 if scale == 4 else cv2.resize(first4, target_size, interpolation=cv2.INTER_LANCZOS4)
+                    rgb = first4 if first4.shape[1::-1] == target_size else cv2.resize(first4, target_size, interpolation=cv2.INTER_LANCZOS4)
                 del first4
                 if has_alpha:
                     job['phase'] = 'alpha'
@@ -346,6 +377,8 @@ def process_job(job_id: str) -> None:
                     output = improve_raster(output, sharpness=int(options['sharpness']))
                 filename = processed_filename(source['filename'], scale, options.get('upscaleModel', 'general'), options.get('detailMode', 'faithful'))
             elif operation == 'remove-background':
+                models.clear()
+                release_optional_models()
                 output, model_id = remove_background(image, options, job)
                 filename = operation_filename(source['filename'], operation, model_id)
             elif operation == 'clean':
@@ -356,6 +389,10 @@ def process_job(job_id: str) -> None:
                 filename = operation_filename(source['filename'], operation, model_id)
             else:
                 raise ValueError('Operação inválida.')
+
+            if generative:
+                model_id = f'FLUX.2-klein-4B+{model_id}'
+                filename = operation_filename(source['filename'], operation, model_id)
 
             job['phase'] = 'encoding'
             result_id = new_id('img')
@@ -371,6 +408,9 @@ def process_job(job_id: str) -> None:
             out_height, out_width = output.shape[:2]
             root_id, version_number = version_identity(source)
             result = {'id': result_id, 'filename': filename, 'mime': 'image/png', 'width': out_width, 'height': out_height, 'hasAlpha': output.ndim == 3 and output.shape[2] == 4, 'path': str(output_path), 'previewPath': str(preview_path), 'inspectPath': str(inspect_path), 'webpPath': None, 'parentId': source['id'], 'rootId': root_id, 'versionNumber': version_number, 'operation': operation, 'engine': model_id, 'options': options}
+            if generative:
+                result['candidate'] = True
+                result['warning'] = 'Reconstrução generativa: confira letras, cores e geometria. Fundo branco; transparência não é inferida pelo FLUX.'
             artifacts[result_id] = result
             job.update(status='done', phase='done', resultArtifactId=result_id, progress={'completedTiles': total, 'totalTiles': total}, metrics={'durationMs': round((time.perf_counter() - started) * 1000), 'peakRssBytes': max(peak, psutil.Process().memory_info().rss), 'modelId': model_id})
     except InterruptedError as exc:
@@ -393,23 +433,21 @@ def health() -> dict[str, Any]:
 
 @app.post('/api/models/prepare')
 def prepare_models() -> dict[str, Any]:
-    """Baixa, valida e carrega todos os modelos antes de liberar a interface."""
+    """Informa o catálogo; os pesos são baixados somente na primeira utilização."""
     if not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada.')
     ready = []
     for kind, spec in MODEL_SPECS.items():
-        if spec.get('preload') is False:
-            continue
-        state: dict[str, Any] = {}
-        descriptor = get_model(kind, state)
         model_path = MODELS_DIR / spec['file']
+        valid = model_path.exists() and sha256_file(model_path) == spec['sha256']
         ready.append({
             'kind': kind,
             'name': spec['name'],
-            'bytes': model_path.stat().st_size,
+            'bytes': model_path.stat().st_size if model_path.exists() else 0,
             'sha256': spec['sha256'],
-            'scale': int(descriptor.scale),
-            'status': 'validated',
+            'scale': 4,
+            'url': spec['url'],
+            'status': 'cache_validated' if valid else 'not_requested',
         })
     return {'ok': True, 'models': ready}
 
@@ -468,12 +506,14 @@ def delete_artifact(artifact_id: str) -> dict[str, Any]:
 @app.post('/api/jobs', status_code=202)
 async def create_job(request: JobRequest) -> dict[str, Any]:
     gpu_operations = ('upscale', 'remove-background')
-    if request.operation in gpu_operations and not torch.cuda.is_available():
+    if (request.operation in gpu_operations or request.options.get('useAI')) and not torch.cuda.is_available():
         raise HTTPException(503, 'GPU CUDA não encontrada. No Colab, selecione um ambiente T4.')
     allowed = ('upscale', 'remove-background', 'clean', 'black-white', 'vectorize')
     if request.operation not in allowed or request.artifactId not in artifacts:
         raise HTTPException(400, 'Imagem ou operação inválida.')
-    if any(j['status'] in ('queued', 'preparing', 'processing') for j in jobs.values()):
+    if artifacts[request.artifactId].get('candidate'):
+        raise HTTPException(409, 'Aceite ou descarte a reconstrução antes de iniciar outra operação.')
+    if any(j['status'] in ('queued', 'preparing', 'loading_model', 'processing', 'encoding', 'cancelling') for j in jobs.values()):
         raise HTTPException(409, 'Aguarde o trabalho atual terminar.')
     job_id = new_id('job')
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
@@ -481,6 +521,21 @@ async def create_job(request: JobRequest) -> dict[str, Any]:
     jobs[job_id] = job
     asyncio.get_running_loop().run_in_executor(executor, process_job, job_id)
     return job
+
+
+@app.post('/api/artifacts/{artifact_id}/accept')
+def accept_candidate(artifact_id: str):
+    item = artifacts.get(artifact_id)
+    if not item:
+        raise HTTPException(404, 'Candidato não encontrado.')
+    if not item.get('candidate'):
+        return artifact_public(item)
+    source = artifacts.get(item['parentId'])
+    if not source:
+        raise HTTPException(409, 'A entrada do candidato não está mais disponível.')
+    _, number = version_identity(source)
+    item.update(candidate=False, versionNumber=number)
+    return artifact_public(item)
 
 
 @app.get('/api/jobs/{job_id}')

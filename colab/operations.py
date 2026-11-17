@@ -54,8 +54,10 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
 
     if engine == "ben2":
         if "ben2" not in _MODELS:
+            print('[MODELO] Baixando/carregando PramaLLC/BEN2 — https://huggingface.co/PramaLLC/BEN2', flush=True)
             from ben2 import AutoModel
             _MODELS["ben2"] = AutoModel.from_pretrained("PramaLLC/BEN2").to("cuda").eval()
+            print('[GPU] BEN2 carregado para inferência.', flush=True)
         model = _MODELS["ben2"]
         job.update(status="processing", phase="background_inference", progress={"completedTiles": 0, "totalTiles": 1})
         with torch.inference_mode():
@@ -68,11 +70,13 @@ def remove_background(image: np.ndarray, options: dict[str, Any], job: dict[str,
     if engine != "birefnet-hr":
         raise ValueError("Motor de remoção de fundo inválido.")
     if "birefnet-hr" not in _MODELS:
+        print('[MODELO] Baixando/carregando ZhengPeng7/BiRefNet_HR-matting — https://huggingface.co/ZhengPeng7/BiRefNet_HR-matting', flush=True)
         from transformers import AutoModelForImageSegmentation
         model = AutoModelForImageSegmentation.from_pretrained(
             "ZhengPeng7/BiRefNet_HR-matting", trust_remote_code=True
         ).eval().cuda().half()
         _MODELS["birefnet-hr"] = model
+        print('[GPU] BiRefNet HR-Matting carregado em FP16.', flush=True)
     model = _MODELS["birefnet-hr"]
     job.update(status="processing", phase="background_inference", progress={"completedTiles": 0, "totalTiles": 1})
     rgb = source_pil.convert("RGB")
@@ -136,10 +140,22 @@ def black_white(image: np.ndarray, options: dict[str, Any], job: dict[str, Any])
         bgr = np.rint(bgr * coverage + 255 * (1 - coverage)).astype(np.uint8)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     method = options.get("thresholdMode", "adaptive")
+    if method == 'auto':
+        # Fundo irregular favorece limiar local; arte plana usa Otsu.
+        illumination = cv2.GaussianBlur(gray, (0, 0), max(1, min(gray.shape) / 16))
+        method = 'sauvola' if float(illumination.std()) > 30 else 'otsu'
     if method == "manual":
         _, mask = cv2.threshold(gray, int(options.get("threshold", 128)), 255, cv2.THRESH_BINARY)
     elif method == "otsu":
         _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    elif method == 'sauvola':
+        from skimage.filters import threshold_sauvola
+        window = min(31, min(gray.shape) if min(gray.shape) % 2 else min(gray.shape) - 1)
+        if window < 3:
+            _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        else:
+            threshold_map = threshold_sauvola(gray, window_size=window, k=0.15, r=128)
+            mask = np.where(gray > threshold_map, 255, 0).astype(np.uint8)
     else:
         block = max(3, int(options.get("adaptiveBlock", 31)) | 1)
         mask = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block, int(options.get("adaptiveC", 7)))

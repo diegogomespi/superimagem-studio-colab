@@ -45,6 +45,17 @@ Na inicialização são validados os dois pesos pequenos do upscale comum. SwinI
 
 ## Validação
 
+### Atualização: Usar IA e logs sob demanda
+
+- Ampliar e Preto e branco têm a caixa `Usar IA`, desligada por padrão.
+- Ligada, solicita reconstrução raster com FLUX.2 Klein 4B, em ambiente Python separado. Instalação e pesos são obtidos somente no primeiro uso; a primeira execução pode demorar bastante.
+- A integração FLUX é experimental: ainda não executada numa T4 deste projeto. Usa NF4 com cálculo FP16; erros são registrados e não desativam os motores convencionais.
+- O resultado generativo exige Aceitar ou Descartar antes de continuar. O original permanece disponível. FLUX retorna RGB com fundo branco, não SVG nem alpha inferido. Confira letras e geometria manualmente.
+- A inicialização lista o catálogo e o estado do cache. Downloads e carregamentos durante o uso aparecem no log vivo do Colab, com origem, arquivo, bytes/progresso quando disponíveis e confirmação de hash para os pesos oficiais de upscale.
+- Download concluído, checksum validado e modelo carregado são eventos distintos. As bibliotecas Hugging Face exibem seus próprios progressos; não se declara SHA verificado para arquivos sem verificação explícita do aplicativo.
+- Sauvola e seleção automática Otsu/Sauvola disponíveis no P&B. A escolha automática é uma heurística de iluminação e exige revisão visual.
+- Ainda pendentes: DiffBIR, comparação de recortadores A/B, Finegrain, FeyNoBg, Lucida, ViTMatte/SDMatte, pincéis, Inkvec e histórico múltiplo. Esta atualização não declara o conjunto completo pronto.
+
 - TypeScript estrito e build Vite.
 - Teste HTTP de upload, trabalhos, histórico e downloads PNG/SVG.
 - Teste raster sintético de limpeza e preto e branco.

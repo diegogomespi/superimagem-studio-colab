@@ -3,6 +3,8 @@ export type Profile = 'economy' | 'balanced';
 export type JobStatus = 'queued' | 'preparing' | 'loading_model' | 'processing' | 'encoding' | 'done' | 'cancelling' | 'cancelled' | 'error' | 'interrupted';
 
 export interface ArtifactInfo {
+  candidate?: boolean;
+  warning?: string;
   id: string;
   filename: string;
   mime: string;
@@ -19,6 +21,7 @@ export interface ArtifactInfo {
 }
 
 export interface JobOptions {
+  useAI?: boolean;
   mode?: 'ai' | 'color';
   model?: 'u2netp' | 'u2net-human-seg' | 'isnet-general-use' | 'birefnet-general' | 'birefnet-hr-matting';
   maskContrast?: number;
@@ -34,7 +37,7 @@ export interface JobOptions {
   cleanStrength?: number;
   cleanAlpha?: boolean;
   autoContrast?: boolean;
-  thresholdMode?: 'adaptive' | 'otsu' | 'manual';
+  thresholdMode?: 'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola';
   threshold?: number;
   vectorMode?: 'color' | 'bw';
   vectorEngine?: 'vtracer' | 'potrace';

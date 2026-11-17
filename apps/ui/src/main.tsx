@@ -50,13 +50,14 @@ function App() {
   const [detailMode, setDetailMode] = useState<DetailMode>('faithful');
   const [denoise, setDenoise] = useState(0);
   const [sharpness, setSharpness] = useState(25);
+  const [useAI, setUseAI] = useState(false);
   const [operation, setOperation] = useState<Operation>('upscale');
   const [activePanel, setActivePanel] = useState<Panel>('upscale');
   const [backgroundEngine, setBackgroundEngine] = useState<'birefnet-hr' | 'ben2'>('birefnet-hr');
   const [refineEdges, setRefineEdges] = useState(true);
   const [cleanStyle, setCleanStyle] = useState<'illustration' | 'photo'>('illustration');
   const [cleanStrength, setCleanStrength] = useState(35);
-  const [thresholdMode, setThresholdMode] = useState<'adaptive' | 'otsu' | 'manual'>('adaptive');
+  const [thresholdMode, setThresholdMode] = useState<'adaptive' | 'otsu' | 'manual' | 'auto' | 'sauvola'>('auto');
   const [threshold, setThreshold] = useState(128);
   const [vectorMode, setVectorMode] = useState<'color' | 'bw'>('color');
   const [maxColors, setMaxColors] = useState(16);
@@ -182,16 +183,16 @@ function App() {
     return () => window.removeEventListener('paste', pasteImage);
   });
   const execute = async () => {
-    if (!artifact || submitLock.current || (job && !terminal.has(job.status))) return;
+    if (!artifact || artifact.candidate || submitLock.current || (job && !terminal.has(job.status))) return;
     submitLock.current = true; setSubmitting(true);
     setError(''); setJob(null); setOperationSource(artifact); revoke(afterUrl); revoke(afterInspectUrl); setAfterUrl(''); setAfterInspectUrl(''); setView('original');
     try {
       const sourcePreview = await loadPreviewImage(artifact.id);
       revoke(beforeUrl); setBeforeUrl(sourcePreview); revoke(beforeInspectUrl); setBeforeInspectUrl('');
-      const options = operation === 'upscale' ? { scale, upscaleModel: model, detailMode, denoise, sharpness }
+      const options = operation === 'upscale' ? { scale, upscaleModel: model, detailMode, denoise, sharpness, useAI }
         : operation === 'remove-background' ? { backgroundEngine, refineEdges }
         : operation === 'clean' ? { cleanStyle, cleanStrength, cleanAlpha: true, autoContrast: true }
-        : operation === 'black-white' ? { thresholdMode, threshold, adaptiveBlock: 31, adaptiveC: 7, speckle: 2 }
+        : operation === 'black-white' ? { thresholdMode, threshold, adaptiveBlock: 31, adaptiveC: 7, speckle: 2, useAI }
         : { vectorMode, vectorEngine: vectorMode === 'bw' ? 'potrace' : 'vtracer', maxColors, adaptive: true, curveMode: 'spline' };
       const value = await (await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artifactId: artifact.id, operation, options }) })).json();
       setJob(value);
@@ -206,7 +207,9 @@ function App() {
         if (terminal.has(next.status)) setError('');
         if (next.status === 'done' && next.resultArtifactId) {
           const result: ArtifactInfo = await (await api(`/api/artifacts/${next.resultArtifactId}`)).json();
-          const url = await loadPreviewImage(next.resultArtifactId); revoke(afterUrl); setAfterUrl(url); setArtifact(result); recordNavigation(result.id); setVersions(current => current.some(item => item.id === result.id) ? current : [...current, result]); setView('result'); setFit(true);
+          const url = await loadPreviewImage(next.resultArtifactId); revoke(afterUrl); setAfterUrl(url); setArtifact(result);
+          if (!result.candidate) { recordNavigation(result.id); setVersions(current => current.some(item => item.id === result.id) ? current : [...current, result]); }
+          setView('result'); setFit(true);
           const sourceId = next.artifactId;
           if (sourceId) Promise.all([loadPreviewImage(sourceId, true), loadPreviewImage(next.resultArtifactId, true)]).then(([sourceInspect, resultInspect]) => {
             revoke(beforeInspectUrl); revoke(afterInspectUrl); setBeforeInspectUrl(sourceInspect); setAfterInspectUrl(resultInspect);
@@ -332,6 +335,9 @@ function App() {
       {activePanel !== 'history' && <div className="field output-summary"><p className="dimension">Próxima saída: <strong>{outputDimensions}</strong></p><small>A operação usará exatamente a entrada indicada acima.</small></div>}
       {activePanel !== 'history' && <div className="field format-field"><label>BAIXAR VERSÃO ATIVA</label>{artifact?.mime === 'image/svg+xml' ? <div className="format-switch"><button className="selected">SVG</button></div> : <div className="format-switch"><button className={exportFormat === 'png' ? 'selected' : ''} onClick={() => setExportFormat('png')}>PNG</button><button className={exportFormat === 'jpeg' ? 'selected' : ''} onClick={() => setExportFormat('jpeg')}>JPEG</button><button className={exportFormat === 'webp' ? 'selected' : ''} disabled={Boolean(artifact && Math.max(artifact.width, artifact.height) > 16383)} onClick={() => setExportFormat('webp')}>WebP</button></div>}<small>{artifact?.mime === 'image/svg+xml' ? 'Vetor editável e escalável sem perda.' : exportFormat === 'png' ? 'Sem perdas e com transparência preservada.' : exportFormat === 'jpeg' ? 'Arquivo compacto com fundo branco e qualidade 95.' : 'Arquivo compacto Q95, preservando transparência.'}</small></div>}
       {activePanel === 'upscale' && <div className="field"><label>REDUZIR RUÍDO · {denoise}%</label><input type="range" min="0" max="100" value={denoise} onChange={e => setDenoise(+e.target.value)}/><label>NITIDEZ EXTRA · {sharpness}%</label><input type="range" min="0" max="100" value={sharpness} onChange={e => setSharpness(+e.target.value)}/><small>Tratamento suave de luminância; transparência preservada. Zero desativa.</small></div>}
+      {(activePanel === 'upscale' || activePanel === 'black-white') && <div className="field"><label className="check-row"><input type="checkbox" checked={useAI} onChange={e => setUseAI(e.target.checked)}/> Usar IA · reconstruir logo</label><small>{useAI ? 'FLUX Klein experimental: download grande no primeiro uso. Pode alterar letras. Resultado precisa de aprovação; fundo branco.' : 'Desligado: utiliza os motores convencionais, sem reconstrução generativa.'}</small></div>}
+      {artifact?.candidate && <div className="field"><small>{artifact.warning}</small><button disabled={running} onClick={async () => { try { const accepted: ArtifactInfo = await (await api(`/api/artifacts/${artifact.id}/accept`, { method: 'POST' })).json(); setArtifact(accepted); setVersions(current => [...current, accepted]); recordNavigation(accepted.id); } catch (e) { setError(String(e)); } }}>✓ Aceitar reconstrução</button><button disabled={running} onClick={async () => { if (!operationSource) return; try { await api(`/api/artifacts/${artifact.id}`, { method: 'DELETE' }); await selectVersion(operationSource, false); } catch (e) { setError(String(e)); } }}>Descartar reconstrução</button></div>}
+      {activePanel === 'black-white' && <div className="field"><label>PREPARAÇÃO DE LOGOS</label><div className="segmented"><button className={thresholdMode === 'auto' ? 'selected' : ''} onClick={() => setThresholdMode('auto')}>Automático</button><button className={thresholdMode === 'sauvola' ? 'selected' : ''} onClick={() => setThresholdMode('sauvola')}>Sauvola</button></div><small>Automático avalia iluminação e escolhe Otsu ou Sauvola. Confira acentos e furos antes de vetorizar.</small></div>}
       <div className="panel-spacer"/>
       {activePanel !== 'history' && error && <div className="error">{error}</div>}{activePanel !== 'history' && job?.error && <div className="error">{job.error.message}</div>}
       {activePanel !== 'history' && job && <details className="job-state" open={running || undefined}><summary><span>{phaseLabel[job.phase] ?? job.phase}</span><b>{progress === null ? '•••' : `${progress}%`}</b></summary><div className="tile-progress" aria-label={`Progresso ${progress ?? 0}%`}>{Array.from({ length: squares }, (_, i) => <i key={i} className={i < completedSquares ? 'done' : ''}/>)}</div>{job.metrics && <small>{(job.metrics.durationMs / 1000).toFixed(1)}s · pico {(job.metrics.peakRssBytes / 1073741824).toFixed(1)} GB</small>}</details>}
